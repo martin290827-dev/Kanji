@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 4 (10.10.2026)';
+const VERSION = 'Version 5 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -313,9 +313,15 @@ async function identify() {
     const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 30000);
     let res; try { res = await fetch(url, { method: 'POST', body: fd, signal: ctl.signal }); } finally { clearTimeout(to); }
     if (res.status === 404) { out.innerHTML = '<p class="muted">Keine Pflanze erkannt. Anderes Foto versuchen (Blatt oder Blüte, gutes Licht).</p>'; return; }
-    if (res.status === 401 || res.status === 403) throw new Error('Der Schlüssel wird abgelehnt. Bitte unter „Mehr“ prüfen (ohne Leerzeichen kopiert?).');
-    if (res.status === 429) throw new Error('Tageslimit erreicht. Morgen wieder versuchen.');
-    if (!res.ok) throw new Error('Fehler vom Dienst (Code ' + res.status + ').');
+    if (!res.ok) {
+      let body = ''; try { body = (await res.text()).replace(/\s+/g, ' ').trim().slice(0, 200); } catch {}
+      if (res.status === 429) throw new Error('Tageslimit erreicht. Morgen wieder versuchen.');
+      const k = state.settings.plantnetKey;
+      const keyInfo = `Gespeicherter Schlüssel: ${k.length} Zeichen, Anfang „${k.slice(0, 4)}“, Ende „${k.slice(-4)}“.`;
+      if (res.status === 401 || res.status === 403)
+        throw new Error(`Pl@ntNet lehnt die Anfrage ab (Code ${res.status}). Antwort des Dienstes: „${body || 'leer'}“. ${keyInfo} Prüfe auf my.plantnet.org/settings/api-key: Schlüssel freigegeben, Domain martin290827-dev.github.io gespeichert, und es ist der private Schlüssel.`);
+      throw new Error(`Fehler vom Dienst (Code ${res.status}). Antwort: „${body || 'leer'}“.`);
+    }
     const data = await res.json();
     const results = (data.results || []).slice(0, 3);
     if (!results.length) { out.innerHTML = '<p class="muted">Keine Treffer.</p>'; return; }
