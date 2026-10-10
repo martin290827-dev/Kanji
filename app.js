@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 12 (10.10.2026)';
+const VERSION = 'Version 14 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -145,47 +145,38 @@ function toxBlock(e) {
 /* ---------- Router ---------- */
 const routes = {};
 function route() {
-  const parts = (location.hash.slice(1) || 'heute').split('/');
+  const parts = (location.hash.slice(1) || 'sammlung').split('/');
   const name = parts[0];
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === (['pflanze', 'neu', 'bearbeiten'].includes(name) ? 'sammlung' : name)));
-  (routes[name] || routes.heute)(parts.slice(1));
+  (routes[name] || routes.sammlung)(parts.slice(1));
   window.scrollTo(0, 0);
 }
 const go = h => { location.hash = h; };
 const render = (title, html) => { titleEl.textContent = title; view.innerHTML = html; fillPhotos(); };
 const thumb = p => p.photo ? `<img class="thumb" data-photo="${esc(p.photo)}" alt="">` : `<div class="thumb">🌿</div>`;
 
-/* ---------- Heute ---------- */
-routes.heute = () => {
-  const water = state.plants.filter(p => diffDays(today(), nextWater(p)) <= 0)
-    .sort((a, b) => nextWater(a).localeCompare(nextWater(b)));
-  const fert = state.plants.filter(p => { const n = nextFert(p); return n && diffDays(today(), n) <= 0; });
-  if (navigator.setAppBadge) { try { water.length ? navigator.setAppBadge(water.length) : navigator.clearAppBadge(); } catch {} }
-  let h = '';
-  if (!state.plants.length) h = `<div class="empty">Noch keine Pflanzen.<br><br><a class="btn" href="#neu">Erste Pflanze hinzufügen</a></div>`;
-  else {
-    h += `<h2>Gießen (${water.length})</h2>`;
-    h += water.length ? water.map(p => `<div class="card row">${thumb(p)}<div class="grow"><a class="name" href="#pflanze/${p.id}" style="color:inherit;text-decoration:none">${esc(p.name)}</a>
-      <div>${statusBadge(nextWater(p), 'Gießen')}</div></div><button class="water small" data-water="${p.id}">Gegossen</button></div>`).join('')
-      : `<p class="muted">Heute ist nichts fällig.</p>`;
-    if (fert.length) {
-      h += `<h2>Düngen (${fert.length})</h2>` + fert.map(p => `<div class="card row">${thumb(p)}<div class="grow"><a class="name" href="#pflanze/${p.id}" style="color:inherit;text-decoration:none">${esc(p.name)}</a>
-        <div>${statusBadge(nextFert(p), 'Düngen')}</div></div><button class="small" data-fert="${p.id}">Gedüngt</button></div>`).join('');
-    }
-    if (state.settings.winter && isWinter()) h += `<p class="hint">Winter-Modus aktiv: Gießabstände bei Zimmerpflanzen ×1,5, kein Düngen.</p>`;
-    h += `<p class="hint">Hinweis: Diese App sendet keine Push-Nachrichten. Das rote Symbol am App-Icon zeigt die Zahl der fälligen Pflanzen, sobald du die App öffnest.</p>`;
-  }
-  render('Heute', h);
-};
+routes.heute = () => go('sammlung');
 
 /* ---------- Sammlung ---------- */
 routes.sammlung = () => {
   const list = [...state.plants].sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  const fert = list.filter(p => { const n = nextFert(p); return n && diffDays(today(), n) <= 0; });
+  if (navigator.setAppBadge) { try { fert.length ? navigator.setAppBadge(fert.length) : navigator.clearAppBadge(); } catch {} }
   let h = `<div class="actions"><a class="btn" href="#neu">+ Neue Pflanze</a></div>`;
-  h += list.length ? list.map(p => `<a class="card row" href="#pflanze/${p.id}" style="color:inherit;text-decoration:none">${thumb(p)}
+  if (fert.length) h += `<h2>Düngen fällig (${fert.length})</h2>` + fert.map(p => `<div class="card row">${thumb(p)}<div class="grow"><a class="name" href="#pflanze/${p.id}" style="color:inherit;text-decoration:none">${esc(p.name)}</a>
+    <div>${statusBadge(nextFert(p), 'Düngen')}</div></div><button class="small" data-fert="${p.id}">Gedüngt</button></div>`).join('');
+  const item = p => { const nf = nextFert(p); return `<a class="card row" href="#pflanze/${p.id}" style="color:inherit;text-decoration:none">${thumb(p)}
     <div class="grow"><div class="name">${esc(p.name)}</div>
-    <div class="muted">${esc(p.latin || '')} · ${p.location === 'aussen' ? 'draußen' : 'drinnen'}</div>
-    <div>${statusBadge(nextWater(p), 'Gießen')}</div></div></a>`).join('') : `<div class="empty">Deine Sammlung ist leer.</div>`;
+    <div class="muted">${esc(p.latin || '')}${p.latin ? ' · ' : ''}${p.location === 'aussen' ? 'draußen' : 'drinnen'}</div>
+    <div class="muted">Gießen alle ${waterInterval(p)} Tage</div>
+    ${nf ? `<div>${statusBadge(nf, 'Düngen')}</div>` : (p.fertDays ? '<div class="muted">Düngepause bis März</div>' : '')}</div></a>`; };
+  if (!list.length) h += `<div class="empty">Deine Sammlung ist leer.</div>`;
+  else {
+    const rooms = [...new Set(list.map(p => p.room || ''))].sort((x, y) => (x === '') - (y === '') || x.localeCompare(y, 'de'));
+    if (rooms.length === 1 && rooms[0] === '') h += list.map(item).join('');
+    else h += rooms.map(r => `<h2>${esc(r || 'Ohne Raum')} (${list.filter(p => (p.room || '') === r).length})</h2>` + list.filter(p => (p.room || '') === r).map(item).join('')).join('');
+  }
+  if (state.settings.winter && isWinter() && list.length) h += `<p class="hint">Winter-Modus aktiv: Gießabstände bei Zimmerpflanzen ×1,5, kein Düngen.</p>`;
   render(`Sammlung (${list.length})`, h);
 };
 
@@ -196,9 +187,9 @@ routes.pflanze = ([id]) => {
   const nf = nextFert(p);
   let h = p.photo ? `<img class="big" data-photo="${esc(p.photo)}" alt="">` : '';
   h += `<div class="card"><div class="name">${esc(p.name)}</div><div class="muted">${esc(p.latin || '')}</div>
-    <p>${statusBadge(nextWater(p), 'Gießen')} ${nf ? statusBadge(nf, 'Düngen') : ''}</p>
-    <div class="actions"><button class="water" data-water="${p.id}">Gegossen</button>
-    ${p.fertDays ? `<button class="sec" data-fert="${p.id}">Gedüngt</button>` : ''}</div>
+    ${p.room ? `<div class="muted">Raum: ${esc(p.room)}</div>` : ''}
+    ${nf ? `<p>${statusBadge(nf, 'Düngen')}</p>` : ''}
+    ${p.fertDays ? `<div class="actions"><button data-fert="${p.id}">Gedüngt</button></div>` : ''}
     <p class="muted">Gießen alle ${waterInterval(p)} Tage${waterInterval(p) !== Number(p.waterDays) ? ` (Winter, sonst ${p.waterDays})` : ''}</p>
     ${p.fertDays ? `<p><b>Zuletzt gedüngt: ${p.lastFert ? fmtDE(p.lastFert) : 'noch nie'}</b><br><span class="muted">alle ${p.fertDays} Tage, März bis September</span></p>` : ''}
     ${p.notes ? `<p>${esc(p.notes).replace(/\n/g, '<br>')}</p>` : ''}</div>`;
@@ -209,6 +200,9 @@ routes.pflanze = ([id]) => {
   h += `<div class="actions"><a class="btn sec" href="#bearbeiten/${p.id}">Bearbeiten</a><button class="danger" data-del="${p.id}">Löschen</button></div>`;
   render(p.name, h);
 };
+
+const BASE_ROOMS = ['Wohnzimmer', 'Schlafzimmer', 'Küche', 'Bad', 'Arbeitszimmer', 'Flur', 'Balkon', 'Garten'];
+const roomList = () => [...new Set([...BASE_ROOMS, ...state.plants.map(p => p.room).filter(Boolean)])];
 
 /* ---------- Formular ---------- */
 function formView(p, fromScan) {
@@ -227,8 +221,9 @@ function formView(p, fromScan) {
     <label>Name</label><input name="name" required value="${esc(p.name || '')}" autocomplete="off">
     <label>Art (botanisch, optional)</label><input name="latin" value="${esc(p.latin || '')}">
     <label>Standort</label><select name="location"><option value="innen" ${p.location !== 'aussen' ? 'selected' : ''}>Drinnen</option><option value="aussen" ${p.location === 'aussen' ? 'selected' : ''}>Draußen</option></select>
-    <div class="two"><div><label>Gießen alle (Tage)</label><input name="waterDays" type="number" min="1" max="90" value="${esc(p.waterDays ?? 7)}"></div>
-    <div><label>Zuletzt gegossen</label><input name="lastWatered" type="date" value="${esc(p.lastWatered || '')}"></div></div>
+    <label>Raum (optional)</label><input name="room" list="rooms" value="${esc(p.room || '')}" placeholder="z. B. Wohnzimmer" autocomplete="off">
+    <datalist id="rooms">${roomList().map(r => `<option value="${esc(r)}">`).join('')}</datalist>
+    <label>Gießen alle (Tage)</label><input name="waterDays" type="number" min="1" max="90" value="${esc(p.waterDays ?? 7)}">
     <div class="two"><div><label>Düngen alle (Tage, leer = nie)</label><input name="fertDays" type="number" min="0" max="180" value="${esc(p.fertDays ?? '')}"></div>
     <div><label>Zuletzt gedüngt</label><input name="lastFert" type="date" value="${esc(p.lastFert || '')}"></div></div>
     <label>Notizen</label><textarea name="notes">${esc(p.notes || '')}</textarea>
@@ -277,8 +272,8 @@ function formView(p, fromScan) {
     const origDbId = p.dbId, origApprox = !!p.dbApprox;
     Object.assign(rec, {
       name: fd.get('name').trim(), latin: fd.get('latin').trim(), dbId: fd.get('dbId') || '',
-      location: fd.get('location'), waterDays: Number(fd.get('waterDays')) || 7,
-      lastWatered: fd.get('lastWatered') || '', fertDays: fd.get('fertDays') ? Number(fd.get('fertDays')) : '',
+      location: fd.get('location'), room: fd.get('room').trim(), waterDays: Number(fd.get('waterDays')) || 7,
+      fertDays: fd.get('fertDays') ? Number(fd.get('fertDays')) : '',
       lastFert: fd.get('lastFert') || '', notes: fd.get('notes').trim()
     });
     if (!rec.dbId) { const m = dbMatch(rec.latin); if (m && m.exact) rec.dbId = m.entry.id; }
