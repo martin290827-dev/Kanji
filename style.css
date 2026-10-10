@@ -54,3 +54,7 @@ textarea{min-height:70px}
 @keyframes s{to{transform:rotate(360deg)}}
 .hint{font-size:13px;color:var(--muted)}
 .suggest{cursor:pointer}
+.vh{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
+label.btn{margin:0;font-size:16px;color:var(--green-ink)}
+label.btn.sec{color:var(--green)}
+a{color:var(--green)}

@@ -259,24 +259,35 @@ routes.neu = () => { const pre = window.__prefill || {}; window.__prefill = null
 routes.bearbeiten = ([id]) => { const p = state.plants.find(x => x.id === id); if (!p) return go('sammlung'); formView(p); };
 
 /* ---------- Scan / Nachschlagen ---------- */
-let scanFile = null;
+let scanFile = null, scanBusy = false;
 routes.scan = () => {
+  scanFile = null;
   const hasKey = !!state.settings.plantnetKey;
   render('Scan', `<div class="card"><div class="name">Pflanze erkennen</div>
-    <p class="muted">Foto von Blatt, Blüte oder der ganzen Pflanze. Das Bild wird an Pl@ntNet gesendet.</p>
-    ${hasKey ? '' : '<div class="warnbox">Kein Pl@ntNet-Schlüssel hinterlegt. Unter „Mehr“ eintragen (kostenlos, 500 Erkennungen pro Tag).</div>'}
-    <input id="scanfile" type="file" accept="image/*">
-    <img id="scanprev" class="big" style="display:none;margin-top:10px" alt="">
-    <div class="actions"><button id="scango" ${hasKey ? '' : 'disabled'}>Erkennen</button></div>
+    <p class="muted">Foto von Blatt, Blüte oder der ganzen Pflanze. Das Bild wird zur Erkennung an Pl@ntNet gesendet.</p>
+    ${hasKey ? '' : '<div class="warnbox">Noch kein Pl@ntNet-Schlüssel hinterlegt. <a href="#einstellungen">Jetzt unter „Mehr“ eintragen</a> (kostenlos, 500 Erkennungen pro Tag).</div>'}
+    <div class="actions">
+      <label class="btn" for="scancam">📷 Foto aufnehmen</label>
+      <label class="btn sec" for="scangal">🖼 Aus Galerie</label>
+    </div>
+    <input id="scancam" class="vh" type="file" accept="image/*" capture="environment">
+    <input id="scangal" class="vh" type="file" accept="image/*">
+    <img id="scanprev" class="big" style="display:none;margin-top:6px" alt="">
+    <div class="actions"><button id="scango" type="button" class="sec">Erkennen</button></div>
     <div id="scanres"></div></div>
   <div class="card"><div class="name">Giftig oder nicht? Nachschlagen</div>
     <input id="q" placeholder="z. B. Monstera, Lilie, Basilikum" autocomplete="off">
     <div id="qres"></div></div>`);
-  $('#scanfile').addEventListener('change', e => {
-    scanFile = e.target.files[0] || null;
-    const prev = $('#scanprev');
-    if (scanFile) { prev.src = URL.createObjectURL(scanFile); prev.style.display = 'block'; }
-  });
+  const pick = e => {
+    const f = e.target.files && e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    scanFile = f;
+    const prev = $('#scanprev'); prev.src = URL.createObjectURL(f); prev.style.display = 'block';
+    $('#scanres').innerHTML = '';
+    identify();
+  };
+  $('#scancam').addEventListener('change', pick);
+  $('#scangal').addEventListener('change', pick);
   $('#scango').addEventListener('click', identify);
   $('#q').addEventListener('input', e => {
     const r = dbSearch(e.target.value);
@@ -288,19 +299,24 @@ routes.scan = () => {
 };
 
 async function identify() {
-  const out = $('#scanres');
-  if (!scanFile) return toast('Bitte zuerst ein Foto wählen');
+  const out = $('#scanres'); if (!out || scanBusy) return;
+  if (!scanFile) { out.innerHTML = '<div class="warnbox">Bitte zuerst ein Foto aufnehmen oder aus der Galerie wählen.</div>'; return; }
+  if (!state.settings.plantnetKey) { out.innerHTML = '<div class="warnbox">Für die Erkennung fehlt der Pl@ntNet-Schlüssel. <a href="#einstellungen">Unter „Mehr“ eintragen</a>, danach das Foto erneut wählen.</div>'; return; }
+  scanBusy = true;
   out.innerHTML = '<p><span class="spin"></span> Erkenne …</p>';
   try {
-    const blob = await shrink(scanFile, 1024, 0.85);
+    let blob;
+    try { blob = await shrink(scanFile, 1024, 0.85); if (!blob) throw new Error(); }
+    catch { throw new Error('Das Foto konnte nicht gelesen werden. Bitte ein anderes Foto versuchen.'); }
     const fd = new FormData(); fd.append('images', blob, 'foto.jpg'); fd.append('organs', 'auto');
     const base = (state.settings.proxy || PLANTNET).replace(/\/$/, '');
     const url = `${base}/v2/identify/all?api-key=${encodeURIComponent(state.settings.plantnetKey)}&lang=de&nb-results=3&include-related-images=false`;
-    const res = await fetch(url, { method: 'POST', body: fd });
+    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 30000);
+    let res; try { res = await fetch(url, { method: 'POST', body: fd, signal: ctl.signal }); } finally { clearTimeout(to); }
     if (res.status === 404) { out.innerHTML = '<p class="muted">Keine Pflanze erkannt. Anderes Foto versuchen (Blatt oder Blüte, gutes Licht).</p>'; return; }
-    if (res.status === 401 || res.status === 403) throw new Error('Der Schlüssel wird abgelehnt. Bitte unter „Mehr“ prüfen.');
+    if (res.status === 401 || res.status === 403) throw new Error('Der Schlüssel wird abgelehnt. Bitte unter „Mehr“ prüfen (ohne Leerzeichen kopiert?).');
     if (res.status === 429) throw new Error('Tageslimit erreicht. Morgen wieder versuchen.');
-    if (!res.ok) throw new Error('Fehler vom Dienst (' + res.status + ').');
+    if (!res.ok) throw new Error('Fehler vom Dienst (Code ' + res.status + ').');
     const data = await res.json();
     const results = (data.results || []).slice(0, 3);
     if (!results.length) { out.innerHTML = '<p class="muted">Keine Treffer.</p>'; return; }
@@ -315,9 +331,12 @@ async function identify() {
       <div class="actions"><button class="small" data-add="${i}">Zur Sammlung</button><button class="small sec" data-wish="${i}">Wunschliste</button></div></div>`;
     }).join('') + '<p class="hint">Erkennung per Pl@ntNet (https://my.plantnet.org). Bei geringer Sicherheit nicht verlassen, besonders bei Giftigkeit.</p>';
   } catch (e) {
-    const net = e instanceof TypeError;
-    out.innerHTML = `<div class="warnbox">${net ? 'Verbindung fehlgeschlagen. Kein Netz, oder der Browser blockiert die Anfrage. Falls es dauerhaft passiert, unter „Mehr“ einen Proxy eintragen.' : esc(e.message)}</div>`;
-  }
+    let msg;
+    if (e.name === 'AbortError') msg = 'Zeitüberschreitung nach 30 Sekunden. Netz prüfen und nochmal „Erkennen“ tippen.';
+    else if (e instanceof TypeError) msg = 'Verbindung zu Pl@ntNet fehlgeschlagen (' + esc(e.message) + '). Kein Netz, oder der Browser blockiert die Anfrage. Wenn es dauerhaft passiert, melde dich bei Claude mit dieser Meldung.';
+    else msg = esc(e.message);
+    out.innerHTML = `<div class="warnbox">${msg}</div>`;
+  } finally { scanBusy = false; }
 }
 
 /* ---------- Wunschliste ---------- */
@@ -403,7 +422,11 @@ document.addEventListener('click', async e => {
 window.addEventListener('hashchange', route);
 (async () => {
   load(); await loadDB();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    const had = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) location.reload(); });
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   route();
 })();

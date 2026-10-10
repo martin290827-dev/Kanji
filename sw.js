@@ -11,10 +11,9 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return; // API-Aufrufe nie cachen
+  // Netz zuerst (immer neueste Version), Cache nur als Offline-Reserve
   e.respondWith(
-    caches.match(req).then(hit => {
-      const net = fetch(req).then(res => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); } return res; }).catch(() => hit);
-      return hit || net;
-    })
+    fetch(req).then(res => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); } return res; })
+      .catch(() => caches.match(req).then(hit => hit || caches.match('index.html')))
   );
 });
