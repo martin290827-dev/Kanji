@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 19 (10.10.2026)';
+const VERSION = 'Version 20 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -35,6 +35,8 @@ function load() {
   normPhotos();
 }
 function normPhotos() { for (const p of state.plants || []) { if (!Array.isArray(p.photos)) p.photos = p.photo ? [p.photo] : []; if (p.photo && !p.photos.includes(p.photo)) p.photos.unshift(p.photo); if (!p.photo && p.photos.length) p.photo = p.photos[0]; } }
+const coverOf = p => p.crop || p.photo || '';
+async function dropCrop(p) { if (p.crop) { try { await delPhoto(p.crop); } catch {} p.crop = ''; } }
 const photosOf = p => (p.photos && p.photos.length ? p.photos : (p.photo ? [p.photo] : []));
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
@@ -165,7 +167,7 @@ function route() {
 }
 const go = h => { location.hash = h; };
 const render = (title, html) => { titleEl.textContent = title; view.innerHTML = html; fillPhotos(); };
-const thumb = p => p.photo ? `<img class="thumb" data-photo="${esc(p.photo)}" alt="">` : `<div class="thumb">🌿</div>`;
+const thumb = p => coverOf(p) ? `<img class="thumb" data-photo="${esc(coverOf(p))}" alt="">` : `<div class="thumb">🌿</div>`;
 
 routes.heute = () => go('sammlung');
 
@@ -205,10 +207,48 @@ function galleryCard(p) {
   else h += '<p class="muted">Noch kein Foto.</p>';
   if (selPhoto) h += `<div class="kv"><img class="big" data-photo="${esc(selPhoto)}" alt="" style="max-height:340px">
     <div class="actions">${selPhoto !== p.photo ? `<button class="small" data-phcover="${p.id}">Als Titelbild</button>` : '<span class="badge ok">Ist das Titelbild</span>'}
+    ${selPhoto === p.photo ? `<button class="small sec" data-crop="${p.id}">Ausschnitt anpassen</button>` : ''}
     <button class="small danger" data-phdel="${p.id}">Löschen</button><button class="small sec" data-phsel="">Schließen</button></div></div>`;
   h += `<div class="actions"><div class="pick"><span class="btn small">📷 Foto aufnehmen</span><input data-phadd="${p.id}" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
     <div class="pick"><span class="btn sec small">🖼 Aus Galerie</span><input data-phadd="${p.id}" type="file" accept="image/*" multiple aria-label="Fotos aus Galerie wählen"></div></div></div>`;
   return h;
+}
+
+
+/* ---------- Titelbild: Ausschnitt verschieben und zoomen ---------- */
+async function openCrop(id) {
+  const p = state.plants.find(x => x.id === id); if (!p || !p.photo) return;
+  const blob = await getPhoto(p.photo); if (!blob) return toast('Foto nicht gefunden');
+  const bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+  const iw = bmp.width, ih = bmp.height, url = URL.createObjectURL(blob);
+  const ov = document.createElement('div'); ov.className = 'cropov';
+  ov.innerHTML = `<div class="cropbox"><div class="name" style="text-align:center">Titelbild anpassen</div>
+    <p class="hint" style="text-align:center">Mit dem Finger verschieben, mit dem Regler vergrößern.</p>
+    <div class="cropview"><img src="${url}" alt="" draggable="false"></div>
+    <input type="range" id="cz" min="1" max="4" step="0.01" value="1" aria-label="Zoom">
+    <div class="actions" style="justify-content:center"><button class="sec" id="cc">Abbrechen</button>${p.crop ? '<button class="sec" id="cr">Zurücksetzen</button>' : ''}<button id="cs">Speichern</button></div></div>`;
+  document.body.appendChild(ov);
+  const view = ov.querySelector('.cropview'), img = view.querySelector('img'), W = view.clientWidth, H = view.clientHeight;
+  let z = 1, ox = 0, oy = 0; const s0 = Math.max(W / iw, H / ih);
+  const clamp = () => { const mx = Math.max(0, (iw * s0 * z - W) / 2), my = Math.max(0, (ih * s0 * z - H) / 2); ox = Math.min(mx, Math.max(-mx, ox)); oy = Math.min(my, Math.max(-my, oy)); };
+  const draw = () => { clamp(); const s = s0 * z; img.style.width = iw * s + 'px'; img.style.height = ih * s + 'px'; img.style.left = (W / 2 + ox - iw * s / 2) + 'px'; img.style.top = (H / 2 + oy - ih * s / 2) + 'px'; };
+  draw();
+  let drag = null;
+  view.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, ox, oy }; view.setPointerCapture(e.pointerId); });
+  view.addEventListener('pointermove', e => { if (!drag) return; ox = drag.ox + e.clientX - drag.x; oy = drag.oy + e.clientY - drag.y; draw(); });
+  view.addEventListener('pointerup', () => { drag = null; }); view.addEventListener('pointercancel', () => { drag = null; });
+  ov.querySelector('#cz').addEventListener('input', e => { z = Number(e.target.value); draw(); });
+  const close = () => { URL.revokeObjectURL(url); ov.remove(); };
+  ov.querySelector('#cc').onclick = close;
+  const rs = ov.querySelector('#cr'); if (rs) rs.onclick = async () => { await dropCrop(p); save(); close(); toast('Zurückgesetzt'); route(); };
+  ov.querySelector('#cs').onclick = async () => {
+    const s = s0 * z, sx = (iw * s / 2 - ox - W / 2) / s, sy = (ih * s / 2 - oy - H / 2) / s, sw = W / s, sh = H / s;
+    const cv = document.createElement('canvas'); cv.width = 1000; cv.height = Math.round(1000 * H / W);
+    cv.getContext('2d').drawImage(bmp, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+    const out = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.85));
+    if (!out) return toast('Speichern fehlgeschlagen');
+    await dropCrop(p); p.crop = await putPhoto(out); save(); close(); toast('Titelbild angepasst'); route();
+  };
 }
 
 /* ---------- Detail ---------- */
@@ -216,7 +256,7 @@ routes.pflanze = ([id]) => {
   const p = state.plants.find(x => x.id === id); if (!p) return go('sammlung');
   const e = dbById(p.dbId);
   const nf = nextFert(p);
-  let h = p.photo ? `<img class="big" data-photo="${esc(p.photo)}" alt="">` : '';
+  let h = coverOf(p) ? `<img class="big cover" data-photo="${esc(coverOf(p))}" alt="">` : '';
   h += `<div class="card"><div class="name">${esc(p.name)}</div><div class="muted">${esc(p.latin || '')}</div>
     <div class="kv"><div class="k">Raum</div>
       <select data-roomsel="${p.id}"><option value="">– kein Raum –</option>${roomList().map(r => `<option ${r === p.room ? 'selected' : ''}>${esc(r)}</option>`).join('')}<option value="__neu">+ Neuer Raum …</option></select>
@@ -259,7 +299,7 @@ function formView(p, fromScan) {
     <label>Gießen alle (Tage)</label><input name="waterDays" type="number" min="1" max="90" value="${esc(p.waterDays ?? 7)}">
     <input name="fertDays" type="hidden" value="${esc(p.fertDays ?? '')}"><input name="lastFert" type="hidden" value="${esc(p.lastFert || '')}">
     <label>Notizen</label><textarea name="notes">${esc(p.notes || '')}</textarea>
-    <label>${isNew ? 'Foto' : 'Neues Titelbild (optional, weitere Fotos auf der Pflanzenseite)'}</label>${p.photo ? `<img class="thumb" data-photo="${esc(p.photo)}" alt="" style="margin-bottom:6px">` : ''}
+    <label>${isNew ? 'Foto' : 'Neues Titelbild (optional, weitere Fotos auf der Pflanzenseite)'}</label>${coverOf(p) ? `<img class="thumb" data-photo="${esc(coverOf(p))}" alt="" style="margin-bottom:6px">` : ''}
     <input name="photo" type="file" accept="image/*">
     <div class="actions"><button type="submit">Speichern</button><a class="btn sec" href="#${isNew ? 'sammlung' : 'pflanze/' + p.id}">Abbrechen</a></div>
   </form>`);
@@ -312,7 +352,7 @@ function formView(p, fromScan) {
     rec.dbApprox = origApprox && rec.dbId === origDbId;
     const file = fd.get('photo');
     if (file && file.size) {
-      try { const b = await shrink(file, 900, 0.8); const nid = await putPhoto(b); rec.photos = [...photosOf(rec), nid]; rec.photo = nid; }
+      try { const b = await shrink(file, 900, 0.8); const nid = await putPhoto(b); await dropCrop(rec); rec.photos = [...photosOf(rec), nid]; rec.photo = nid; }
       catch (e) { toast('Foto konnte nicht gespeichert werden'); }
     } else if (formScanFile) {
       try { rec.photo = await putPhoto(await shrink(formScanFile, 900, 0.8)); rec.photos = [rec.photo]; } catch (e) { toast('Foto konnte nicht gespeichert werden'); }
@@ -672,7 +712,7 @@ routes.einstellungen = () => {
   };
   $('#exp').onclick = async () => {
     const photos = {};
-    for (const p of state.plants) for (const ph of photosOf(p)) { const b = await getPhoto(ph); if (b) photos[ph] = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); }
+    for (const p of state.plants) for (const ph of [...photosOf(p), ...(p.crop ? [p.crop] : [])]) { const b = await getPhoto(ph); if (b) photos[ph] = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); }
     const copy = { ...state, settings: { ...state.settings, plantnetKey: '', anthropicKey: '' } };
     const blob = new Blob([JSON.stringify({ version: 1, state: copy, photos })], { type: 'application/json' });
     const name = `kanji-backup-${today()}.json`;
@@ -742,14 +782,15 @@ document.addEventListener('click', async e => {
   else if (D.fert) { const p = state.plants.find(x => x.id === D.fert); p.lastFert = today(); (p.log = p.log || []).push({ t: 'fert', d: today() }); p.log = p.log.slice(-40); save(); toast('Gedüngt'); route(); }
   else if (D.del) {
     const p = state.plants.find(x => x.id === D.del);
-    if (confirm(`„${p.name}“ wirklich löschen?`)) { for (const ph of photosOf(p)) await delPhoto(ph); state.plants = state.plants.filter(x => x !== p); save(); go('sammlung'); }
+    if (confirm(`„${p.name}“ wirklich löschen?`)) { for (const ph of photosOf(p)) await delPhoto(ph); await dropCrop(p); state.plants = state.plants.filter(x => x !== p); save(); go('sammlung'); }
   }
+  else if (D.crop) openCrop(D.crop);
   else if (D.phsel !== undefined) { selPhoto = D.phsel || null; route(); }
-  else if (D.phcover) { const p = state.plants.find(x => x.id === D.phcover); if (p && selPhoto) { p.photo = selPhoto; save(); toast('Titelbild geändert'); route(); } }
+  else if (D.phcover) { const p = state.plants.find(x => x.id === D.phcover); if (p && selPhoto) { await dropCrop(p); p.photo = selPhoto; save(); toast('Titelbild geändert'); route(); } }
   else if (D.phdel) {
     const p = state.plants.find(x => x.id === D.phdel); if (!p || !selPhoto) return;
     if (!confirm('Dieses Foto löschen?')) return;
-    await delPhoto(selPhoto); p.photos = photosOf(p).filter(x => x !== selPhoto); if (p.photo === selPhoto) p.photo = p.photos[0] || ''; selPhoto = null; save(); toast('Foto gelöscht'); route();
+    await delPhoto(selPhoto); p.photos = photosOf(p).filter(x => x !== selPhoto); if (p.photo === selPhoto) { await dropCrop(p); p.photo = p.photos[0] || ''; } selPhoto = null; save(); toast('Foto gelöscht'); route();
   }
   else if (D.roomnew) {
     const p = state.plants.find(x => x.id === D.roomnew), v = ($('#roomnew').value || '').trim(); if (!p || !v) return;

@@ -114,3 +114,11 @@ h2.sect{font:700 22px/1.2 -apple-system,sans-serif;text-transform:none;letter-sp
 .ph.sel{border-color:var(--green)}
 .ph img{width:84px;height:84px;object-fit:cover;display:block;border-radius:10px;background:var(--fill)}
 .ph .cov{position:absolute;left:4px;bottom:4px;font-size:10px;font-weight:600;background:var(--green);color:var(--green-ink);padding:1px 6px;border-radius:99px}
+
+.big.cover{aspect-ratio:4/3;max-height:none}
+.cropov{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto}
+.cropbox{background:var(--card);border-radius:var(--radius);padding:16px;width:100%;max-width:420px}
+.cropview{position:relative;width:100%;aspect-ratio:4/3;overflow:hidden;border-radius:12px;background:#000;touch-action:none;cursor:grab;margin:8px 0}
+.cropview img{position:absolute;max-width:none;user-select:none;-webkit-user-select:none;pointer-events:none}
+#cz{padding:0;background:none;height:32px}
+input[type=range]{-webkit-appearance:auto;appearance:auto;accent-color:var(--green);padding:0;height:32px;background:none}
