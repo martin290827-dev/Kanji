@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pflanzen</title>
+<meta name="theme-color" content="#2f6b3f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Pflanzen">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1 id="title">Heute</h1>
+</header>
+<main id="view" aria-live="polite"></main>
+<nav class="tabs" aria-label="Hauptmenü">
+  <a href="#heute" data-tab="heute"><span>💧</span>Heute</a>
+  <a href="#sammlung" data-tab="sammlung"><span>🪴</span>Sammlung</a>
+  <a href="#scan" data-tab="scan"><span>📷</span>Scan</a>
+  <a href="#wunsch" data-tab="wunsch"><span>⭐</span>Wunsch</a>
+  <a href="#einstellungen" data-tab="einstellungen"><span>⚙️</span>Mehr</a>
+</nav>
+<div id="toast" role="status"></div>
+<script src="app.js"></script>
+</body>
+</html>
