@@ -11,13 +11,21 @@ Persönliche Pflanzen-App für iPhone. Läuft als Web-App ohne App Store, ohne S
 - Pflegehinweise und Giftigkeit (Katze, Hund) für rund 34 Zimmerpflanzen
 - Backup als JSON-Datei (Export und Import)
 
-Geplant: Krankheitsdiagnose, Unkraut-Hilfe, Lichtmesser (Kamera-Schätzung), Frostwarnung, gemeinsame Sammlung.
+Mit eigenem Anthropic-Schlüssel (Claude):
+
+- Scan-Seite mit drei Modi: Pflanze, Krankheit, Unkraut (bis 3 Fotos)
+- „Mehr Infos (Claude)“ auf der Pflanzenseite, mit Zweitmeinung zur Art
+- Gesundheitsprüfung per Foto, Ergebnis wird bei der Pflanze gespeichert
+- Verbrauchsanzeige (Schätzung). Verbindliche Kosten stehen in der Anthropic Console.
+
+Geplant: Lichtmesser (Kamera-Schätzung), Frostwarnung, gemeinsame Sammlung.
 
 ## Auf dem iPhone nutzen
 
 1. Seite in **Safari** öffnen.
 2. Teilen-Symbol, dann „Zum Home-Bildschirm“.
 3. App öffnen, unter „Mehr“ den Pl@ntNet-Schlüssel eintragen (kostenlos auf <https://my.plantnet.org>, 500 Erkennungen pro Tag).
+4. Optional: Anthropic-Schlüssel eintragen (<https://platform.claude.com/settings/keys>). Vorher in der Console ein niedriges Ausgabenlimit setzen.
 
 Jedes Gerät hat eigene Daten. Der Schlüssel wird nur auf dem Gerät gespeichert und steht nicht im Code.
 

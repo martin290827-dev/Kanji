@@ -60,3 +60,14 @@ label.btn.sec{color:var(--green)}
 a{color:var(--green)}
 .pick{position:relative;display:inline-block;overflow:hidden;border-radius:12px}
 .pick input{position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;font-size:100px;cursor:pointer;padding:0;border:0}
+.seg{display:flex;gap:6px;margin:4px 0 10px}
+.seg a{flex:1;text-align:center;text-decoration:none;padding:8px 6px;border:1px solid var(--line);border-radius:10px;color:var(--muted);font-weight:600;font-size:14px}
+.seg a.on{background:var(--green);color:var(--green-ink);border-color:var(--green)}
+.btn.small{padding:6px 10px;font-size:14px}
+.thumbs{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.tb{position:relative}
+.tb img{width:84px;height:84px;object-fit:cover;border-radius:10px;display:block}
+.tb button{position:absolute;top:2px;right:2px;padding:0 6px;background:var(--card)}
+details{margin-top:8px}
+summary{cursor:pointer;color:var(--green);font-weight:600}
+ul{margin:4px 0 4px 18px;padding:0}

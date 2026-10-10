@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 7 (10.10.2026)';
+const VERSION = 'Version 8 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -26,7 +26,7 @@ function toast(msg) {
 }
 
 /* ---------- Speicher ---------- */
-const defaults = () => ({ plants: [], wishlist: [], settings: { plantnetKey: '', proxy: '', winter: true } });
+const defaults = () => ({ plants: [], wishlist: [], settings: { plantnetKey: '', proxy: '', winter: true, anthropicKey: '', aiModel: 'claude-sonnet-5-5', aiUsage: { calls: 0, inTok: 0, outTok: 0, usd: 0 } } });
 let state = defaults();
 function load() {
   try { const raw = localStorage.getItem(KEY); if (raw) state = { ...defaults(), ...JSON.parse(raw) }; }
@@ -206,6 +206,7 @@ routes.pflanze = ([id]) => {
   if (e) h += `<div class="card"><div class="name">Pflege</div><p>Licht: ${esc(e.licht)}</p><p>${esc(e.tipp)}</p>
     <p class="hint">Richtwerte. Töpfe, Standort und Raumklima beeinflussen den Bedarf stark: erst Finger-Probe, dann gießen.</p></div>`;
   h += toxBlock(e);
+  h += aiInfoCard(p);
   const log = (p.log || []).slice(-8).reverse();
   if (log.length) h += `<div class="card"><div class="name">Verlauf</div>${log.map(l => `<div class="muted">${fmtDE(l.d)} · ${l.t === 'water' ? 'gegossen' : 'gedüngt'}</div>`).join('')}</div>`;
   h += `<div class="actions"><a class="btn sec" href="#bearbeiten/${p.id}">Bearbeiten</a><button class="danger" data-del="${p.id}">Löschen</button></div>`;
@@ -301,10 +302,10 @@ routes.bearbeiten = ([id]) => { const p = state.plants.find(x => x.id === id); i
 
 /* ---------- Scan / Nachschlagen ---------- */
 let scanFile = null, scanBusy = false;
-routes.scan = () => {
+routes.scanPlant = () => {
   scanFile = null;
   const hasKey = !!state.settings.plantnetKey;
-  render('Scan', `<div class="card"><div class="name">Pflanze erkennen</div>
+  render('Scan', `${modeTabs('pflanze')}<div class="card"><div class="name">Pflanze erkennen</div>
     <p class="muted">Foto von Blatt, Blüte oder der ganzen Pflanze. Das Bild wird zur Erkennung an Pl@ntNet gesendet.</p>
     ${hasKey ? '' : '<div class="warnbox">Noch kein Pl@ntNet-Schlüssel hinterlegt. <a href="#einstellungen">Jetzt unter „Mehr“ eintragen</a> (kostenlos, 500 Erkennungen pro Tag).</div>'}
     <div class="actions">
@@ -390,6 +391,96 @@ async function identify() {
   } finally { scanBusy = false; }
 }
 
+
+/* ---------- KI: Krankheit und Unkraut per Foto, Pflanzen-Infos ---------- */
+const modeTabs = mode => `<div class="seg">
+  <a href="#scan" class="${mode === 'pflanze' ? 'on' : ''}">Pflanze</a>
+  <a href="#scan/krank" class="${mode === 'krank' ? 'on' : ''}">Krankheit</a>
+  <a href="#scan/unkraut" class="${mode === 'unkraut' ? 'on' : ''}">Unkraut</a></div>`;
+const spinner = '<p><span class="spin"></span> Claude wertet aus … (bis zu 30 Sekunden)</p>';
+function aiErrorHTML(e) {
+  if (e.code === 'nokey') return 'Für diese Funktion fehlt der Claude-Schlüssel. <a href="#einstellungen">Unter „Mehr“ eintragen</a>.';
+  if (e.name === 'AbortError') return 'Zeitüberschreitung nach 90 Sekunden. Netz prüfen und noch einmal versuchen.';
+  if (e instanceof TypeError) return 'Verbindung zu Claude fehlgeschlagen (' + esc(e.message) + '). Kein Netz, oder der Browser blockiert die Anfrage.';
+  return esc(e.message);
+}
+const usageLine = u => u ? `<p class="hint">Verbrauch dieser Auswertung: ${u.inTok + u.outTok} Tokens, geschätzt ${(u.usd * 100).toFixed(2)} Cent.</p>` : '';
+
+let aiFiles = [], aiBusy = false, aiLast = null;
+routes.scan = ([mode, pid]) => (mode === 'krank' || mode === 'unkraut') ? aiScanView(mode, pid) : routes.scanPlant();
+
+function aiScanView(mode, pid) {
+  aiFiles = []; aiLast = null;
+  const plant = pid ? state.plants.find(p => p.id === pid) : null;
+  const health = mode === 'krank';
+  const hasKey = !!state.settings.anthropicKey;
+  render('Scan', `${modeTabs(mode)}<div class="card"><div class="name">${health ? 'Pflanzenkrankheit beurteilen' : 'Unkraut bestimmen'}</div>
+    <p class="muted">${health ? 'Foto von kranken Blättern, Stielen oder der ganzen Pflanze. Bis zu 3 Fotos (zum Beispiel nah und weit) verbessern die Einschätzung.' : 'Foto vom Unkraut im Beet oder Rasen. Ein Foto von Blatt und Blüte hilft. Bis zu 3 Fotos.'} Die Fotos gehen zur Auswertung an Claude (Anthropic).</p>
+    ${hasKey ? '' : '<div class="warnbox">Noch kein Claude-Schlüssel hinterlegt. <a href="#einstellungen">Unter „Mehr“ eintragen</a>.</div>'}
+    ${plant ? `<p>Pflanze: <b>${esc(plant.name)}</b></p>` : (health ? '<label>Welche Pflanze? (optional)</label><input id="aiplant" autocomplete="off">' : '<label>Wo wächst es? (optional)</label><input id="aiplace" placeholder="z. B. Beet, Rasen, Gehweg" autocomplete="off">')}
+    <label>${health ? 'Was fällt dir auf? (optional)' : 'Weitere Hinweise (optional)'}</label><textarea id="ainote"></textarea>
+    <div class="actions">
+      <div class="pick"><span class="btn small">📷 Foto aufnehmen</span><input id="aicam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
+      <div class="pick"><span class="btn sec small">🖼 Aus Galerie</span><input id="aigal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
+    </div>
+    <div id="aithumbs" class="thumbs"></div>
+    <div class="actions"><button id="aigo" type="button">Auswerten</button></div><div id="aires"></div></div>`);
+  const drawThumbs = () => {
+    $('#aithumbs').innerHTML = aiFiles.map((f, i) => `<div class="tb"><img src="${URL.createObjectURL(f)}" alt=""><button type="button" class="small danger" data-airm="${i}">✕</button></div>`).join('');
+    $('#aigo').textContent = aiFiles.length ? `Auswerten (${aiFiles.length} Foto${aiFiles.length > 1 ? 's' : ''})` : 'Auswerten';
+  };
+  const pick = e => {
+    const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
+    if (aiFiles.length >= 3) return toast('Maximal 3 Fotos');
+    aiFiles.push(f); drawThumbs();
+  };
+  $('#aicam').addEventListener('change', pick); $('#aigal').addEventListener('change', pick);
+  $('#aithumbs').addEventListener('click', e => { const b = e.target.closest('button[data-airm]'); if (b) { aiFiles.splice(Number(b.dataset.airm), 1); drawThumbs(); } });
+  $('#aigo').addEventListener('click', async () => {
+    const out = $('#aires'); if (aiBusy) return;
+    if (!aiFiles.length) { out.innerHTML = '<div class="warnbox">Bitte zuerst mindestens ein Foto aufnehmen oder wählen.</div>'; return; }
+    aiBusy = true; out.innerHTML = spinner;
+    try {
+      const blobs = []; for (const f of aiFiles) { const b = await shrink(f, 1280, 0.85); if (!b) throw new Error('Ein Foto konnte nicht gelesen werden.'); blobs.push(b); }
+      const note = ($('#ainote').value || '').trim().slice(0, 500);
+      const name = plant ? plant.name : (($('#aiplant') || {}).value || '').trim().slice(0, 100);
+      const place = ($('#aiplace') || {}).value ? $('#aiplace').value.trim().slice(0, 100) : '';
+      const loc = plant ? (plant.location === 'aussen' ? 'draußen' : 'drinnen') : 'unbekannt';
+      const text = health
+        ? `Aufgabe: Gesundheitscheck einer Pflanze anhand von ${blobs.length} Foto(s). Pflanze laut Nutzer: ${name || 'unbekannt'}. Standort: ${loc}. Beobachtung des Nutzers: "${note || 'keine'}". Aktuelles Datum: ${today()} (Jahreszeit berücksichtigen).`
+        : `Aufgabe: Unkraut bestimmen anhand von ${blobs.length} Foto(s). Fundort laut Nutzer: ${place || 'unbekannt'}. Hinweise des Nutzers: "${note || 'keine'}". Aktuelles Datum: ${today()}. Region: Österreich.`;
+      const r = await AI.run(mode, text, blobs, 2500);
+      aiLast = { mode, data: r.data, model: r.model, plantId: plant ? plant.id : null };
+      out.innerHTML = (health ? AI.renderHealth(r.data) : AI.renderWeed(r.data)) + usageLine(r.use)
+        + (plant && health ? `<div class="actions"><button type="button" data-aisave="1">Ergebnis bei „${esc(plant.name)}“ speichern</button></div>` : '');
+    } catch (e) { out.innerHTML = `<div class="warnbox">${aiErrorHTML(e)}</div>`; }
+    finally { aiBusy = false; }
+  });
+}
+
+function aiInfoCard(p) {
+  const i = p.aiInfo;
+  let h = '<div class="card"><div class="name">Mehr Infos (Claude)</div>';
+  h += i ? `<p class="hint">Stand ${fmtDE(i.d)} · ${esc(i.model)}</p>${AI.renderInfo(i.data)}`
+    : `<p class="muted">Pflege, Probleme und Giftigkeit ausführlicher, plus Zweitmeinung zur Art anhand deines Fotos${p.photo ? '' : ' (dafür ein Foto bei der Pflanze speichern)'}.</p>`;
+  h += `<div class="actions"><button class="small" data-aiinfo="${p.id}">${i ? 'Neu abfragen' : 'Infos holen'}</button><a class="btn small sec" href="#scan/krank/${p.id}">Gesundheit prüfen</a></div><div id="aiinfo-out"></div>`;
+  const hl = (p.health || []).slice(-1)[0];
+  if (hl) h += `<details><summary>Letzte Gesundheitsprüfung (${fmtDE(hl.d)})</summary>${AI.renderHealth(hl.data)}</details>`;
+  return h + '</div>';
+}
+
+async function runAiInfo(id) {
+  const p = state.plants.find(x => x.id === id); const out = $('#aiinfo-out'); if (!p || !out || aiBusy) return;
+  aiBusy = true; out.innerHTML = spinner;
+  try {
+    const blobs = []; if (p.photo) { const b = await getPhoto(p.photo); if (b) blobs.push(b); }
+    const text = `Aufgabe: ausführliche Pflegeinfos und Giftigkeit zu einer Zimmer- oder Gartenpflanze. Name: ${p.name}. Botanische Art laut Nutzer oder Erkennung: ${p.latin || 'unbekannt'}. Standort: ${p.location === 'aussen' ? 'draußen' : 'drinnen'}. Aktuelles Datum: ${today()}. ${blobs.length ? 'Ein Foto der Pflanze ist beigefügt. Gib eine Zweitmeinung zur Art.' : 'Kein Foto vorhanden, lass zweitmeinung_art leer.'}`;
+    const r = await AI.run('info', text, blobs, 2500);
+    p.aiInfo = { d: today(), model: r.model, data: r.data }; save(); toast('Infos gespeichert'); route();
+  } catch (e) { out.innerHTML = `<div class="warnbox">${aiErrorHTML(e)}</div>`; }
+  finally { aiBusy = false; }
+}
+
 /* ---------- Wunschliste ---------- */
 routes.wunsch = () => {
   render('Wunschliste', `<form id="wf" class="card"><label>Pflanze</label><input name="name" required autocomplete="off">
@@ -412,6 +503,14 @@ routes.einstellungen = () => {
     <input id="proxy" value="${esc(s.proxy)}" placeholder="https://…" autocapitalize="off">
     <label><input id="winter" type="checkbox" style="width:auto" ${s.winter ? 'checked' : ''}> Winter-Modus (Nov–Feb: drinnen seltener gießen)</label>
     <div class="actions"><button id="saveset">Speichern</button></div></div>
+  <div class="card"><div class="name">Claude-Schlüssel (für Infos, Krankheit, Unkraut)</div>
+    <p class="muted">Eigener API-Schlüssel von platform.claude.com. Bleibt nur auf diesem Gerät. Jede Auswertung kostet Geld. Setze in der Console unter Billing ein niedriges Ausgabenlimit.</p>
+    <input id="akey" value="${esc(s.anthropicKey || '')}" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off">
+    <label>Modell</label><select id="amodel">${Object.entries(AI.MODELS).map(([k, v]) => `<option value="${k}" ${(s.aiModel || AI.DEFAULT_MODEL) === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
+    <div class="actions"><button id="saveai">Speichern</button><button id="testai" class="sec">Verbindung testen</button></div>
+    <div id="aitest"></div>
+    <p class="hint">Bisher: ${(s.aiUsage || {}).calls || 0} Auswertungen, ${((s.aiUsage || {}).inTok || 0) + ((s.aiUsage || {}).outTok || 0)} Tokens, geschätzt ${(((s.aiUsage || {}).usd || 0) * 100).toFixed(1)} Cent (Schätzung nach Listenpreis, maßgeblich ist die Console).
+    <a href="#einstellungen" id="resetuse">Zähler zurücksetzen</a></p></div>
   <div class="card"><div class="name">Backup</div>
     <p class="muted">Daten liegen nur auf diesem Gerät. iOS kann Browserdaten löschen, wenn die App lange nicht genutzt wird. Exportiere regelmäßig.</p>
     <div class="actions"><button id="exp" class="sec">Exportieren</button><label class="btn sec" style="margin:0">Importieren<input id="imp" type="file" accept="application/json" hidden></label></div></div>
@@ -422,10 +521,18 @@ routes.einstellungen = () => {
   $('#saveset').onclick = () => {
     s.plantnetKey = $('#key').value.trim(); s.proxy = $('#proxy').value.trim(); s.winter = $('#winter').checked; save(); toast('Gespeichert');
   };
+  $('#saveai').onclick = () => { s.anthropicKey = $('#akey').value.trim(); s.aiModel = $('#amodel').value; save(); toast('Gespeichert'); };
+  $('#resetuse').onclick = e => { e.preventDefault(); s.aiUsage = { calls: 0, inTok: 0, outTok: 0, usd: 0 }; save(); routes.einstellungen(); };
+  $('#testai').onclick = async () => {
+    s.anthropicKey = $('#akey').value.trim(); s.aiModel = $('#amodel').value; save();
+    const out = $('#aitest'); out.innerHTML = '<p><span class="spin"></span> Teste …</p>';
+    try { const r = await AI.ask({ text: 'Antworte nur mit dem Wort OK.', maxTokens: 10, system: 'Antworte nur mit dem Wort OK.' }); out.innerHTML = `<p class="badge ok">Verbindung steht (${esc(r.model)})</p>`; }
+    catch (e) { out.innerHTML = `<div class="warnbox">${aiErrorHTML(e)}</div>`; }
+  };
   $('#exp').onclick = async () => {
     const photos = {};
     for (const p of state.plants) if (p.photo) { const b = await getPhoto(p.photo); if (b) photos[p.photo] = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); }
-    const copy = { ...state, settings: { ...state.settings, plantnetKey: '' } };
+    const copy = { ...state, settings: { ...state.settings, plantnetKey: '', anthropicKey: '' } };
     const blob = new Blob([JSON.stringify({ version: 1, state: copy, photos })], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `pflanzen-backup-${today()}.json`; a.click();
   };
@@ -434,9 +541,9 @@ routes.einstellungen = () => {
     try {
       const j = JSON.parse(await f.text()); if (!j.state || !Array.isArray(j.state.plants)) throw new Error();
       if (!confirm('Vorhandene Daten auf diesem Gerät werden ersetzt. Fortfahren?')) return;
-      const key = state.settings.plantnetKey;
+      const keep = { plantnetKey: state.settings.plantnetKey, anthropicKey: state.settings.anthropicKey, aiModel: state.settings.aiModel, aiUsage: state.settings.aiUsage };
       for (const [id, data] of Object.entries(j.photos || {})) await idbOp('readwrite', st => st.put(await0(data), id));
-      state = { ...defaults(), ...j.state }; state.settings = { ...defaults().settings, ...j.state.settings, plantnetKey: key };
+      state = { ...defaults(), ...j.state }; state.settings = { ...defaults().settings, ...j.state.settings, ...keep };
       save(); toast('Importiert'); go('sammlung');
     } catch { toast('Datei nicht lesbar'); }
   };
@@ -456,6 +563,11 @@ document.addEventListener('click', async e => {
   else if (D.del) {
     const p = state.plants.find(x => x.id === D.del);
     if (confirm(`„${p.name}“ wirklich löschen?`)) { if (p.photo) await delPhoto(p.photo); state.plants = state.plants.filter(x => x !== p); save(); go('sammlung'); }
+  }
+  else if (D.aiinfo) await runAiInfo(D.aiinfo);
+  else if (D.aisave) {
+    const p = aiLast && state.plants.find(x => x.id === aiLast.plantId); if (!p) return;
+    p.health = [...(p.health || []), { d: today(), model: aiLast.model, data: aiLast.data }].slice(-5); save(); toast('Gespeichert'); go('pflanze/' + p.id);
   }
   else if (D.wdel) { state.wishlist = state.wishlist.filter(w => w.id !== D.wdel); save(); route(); }
   else if (D.own) { const w = state.wishlist.find(x => x.id === D.own); state.wishlist = state.wishlist.filter(x => x !== w); save(); window.__prefill = { name: w.name }; go('neu'); }
