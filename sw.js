@@ -1,5 +1,5 @@
 /* Einfacher Service Worker: App-Dateien offline verfügbar machen. */
-const CACHE = 'pflanzen-v11';
+const CACHE = 'pflanzen-v12';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'ai.js', 'data/plants.json', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png'];
 
 self.addEventListener('install', e => {

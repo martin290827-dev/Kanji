@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 11 (10.10.2026)';
+const VERSION = 'Version 12 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -199,8 +199,8 @@ routes.pflanze = ([id]) => {
     <p>${statusBadge(nextWater(p), 'Gießen')} ${nf ? statusBadge(nf, 'Düngen') : ''}</p>
     <div class="actions"><button class="water" data-water="${p.id}">Gegossen</button>
     ${p.fertDays ? `<button class="sec" data-fert="${p.id}">Gedüngt</button>` : ''}</div>
-    <p class="muted">Zuletzt gegossen: ${fmtDE(p.lastWatered)} · Intervall: alle ${waterInterval(p)} Tage${waterInterval(p) !== Number(p.waterDays) ? ` (Winter, sonst ${p.waterDays})` : ''}</p>
-    ${p.fertDays ? `<p class="muted">Zuletzt gedüngt: ${fmtDE(p.lastFert)} · alle ${p.fertDays} Tage (März bis September)</p>` : ''}
+    <p class="muted">Gießen alle ${waterInterval(p)} Tage${waterInterval(p) !== Number(p.waterDays) ? ` (Winter, sonst ${p.waterDays})` : ''}</p>
+    ${p.fertDays ? `<p><b>Zuletzt gedüngt: ${p.lastFert ? fmtDE(p.lastFert) : 'noch nie'}</b><br><span class="muted">alle ${p.fertDays} Tage, März bis September</span></p>` : ''}
     ${p.notes ? `<p>${esc(p.notes).replace(/\n/g, '<br>')}</p>` : ''}</div>`;
   if (e && p.dbApprox) h += `<div class="warnbox">Pflege- und Giftangaben stammen von einer verwandten Art (${esc(e.name)}). Nur ein Anhaltspunkt, bitte prüfen.</div>`;
   h += mergedCard(p, e);
@@ -499,7 +499,7 @@ function aiScanView(mode, pid) {
 const normSp = x => String(x || '').toLowerCase().replace(/[×x]\s/g, '').trim().split(/\s+/).slice(0, 2).join(' ');
 function mergedCard(p, e) {
   const d = p.aiInfo && p.aiInfo.data, T = AI.t, S = AI.S;
-  let h = '<div class="card"><div class="name">Pflege und Infos</div>';
+  let h = '<div class="card"><div class="cardhead">Pflege und Infos</div>';
   const z = d && d.zweitmeinung_art;
   if (z && S(z.latein)) {
     const same = normSp(z.latein) === normSp(p.latin);
@@ -510,18 +510,18 @@ function mergedCard(p, e) {
   }
   if (e && p.dbApprox) h += `<div class="warnbox">Werte aus der Liste stammen von einer verwandten Art (${esc(e.name)}). Nur ein Anhaltspunkt.</div>`;
   if (d && S(d.kurzbeschreibung)) h += `<p>${T(d.kurzbeschreibung)}</p>`;
-  const row = (title, list, ai) => (list || ai) ? `<p><b>${title}</b><br>${ai ? T(ai) : ''}${list ? `<br><span class="hint">Liste: ${esc(list)}</span>` : ''}</p>` : '';
+  const row = (title, list, ai) => (list || ai) ? `<div class="kv"><div class="k">${title}</div><div class="v">${ai ? T(ai) : esc(list)}</div>${ai && list ? `<div class="src">Liste: ${esc(list)}</div>` : ''}</div>` : '';
   h += row('Licht', e && e.licht, d && d.licht);
   h += row('Gießen', e && `alle ${e.wasser_tage} Tage, Richtwert`, d && d.giessen);
   h += row('Düngen', e && (e.duenger_tage ? `alle ${e.duenger_tage} Tage, Richtwert` : 'meist nicht nötig'), d && d.duengen);
-  if (e && e.tipp) h += `<p><b>Tipp</b><br>${esc(e.tipp)}</p>`;
+  if (e && e.tipp) h += `<div class="kv"><div class="k">Tipp</div><div class="v">${esc(e.tipp)}</div></div>`;
   if (d) {
-    h += [['Erde und Umtopfen', d.substrat_umtopfen], ['Temperatur und Luftfeuchte', d.temperatur_luftfeuchte], ['Im Winter', d.winter]].map(([k, v]) => S(v) ? `<p><b>${k}</b><br>${T(v)}</p>` : '').join('');
-    if (AI.A(d.haeufige_probleme).length) h += `<p><b>Häufige Probleme</b></p>${AI.ul(d.haeufige_probleme)}`;
+    h += [['Erde und Umtopfen', d.substrat_umtopfen], ['Temperatur und Luftfeuchte', d.temperatur_luftfeuchte], ['Im Winter', d.winter]].map(([k, v]) => S(v) ? `<div class="kv"><div class="k">${k}</div><div class="v">${T(v)}</div></div>` : '').join('');
+    if (AI.A(d.haeufige_probleme).length) h += `<div class="kv"><div class="k">Häufige Probleme</div><div class="v">${AI.ul(d.haeufige_probleme)}</div></div>`;
   }
   // Giftigkeit
   const g = (d && d.giftigkeit) || {};
-  h += '<p><b>Giftigkeit</b></p>';
+  h += '<div class="kv"><div class="k">Giftigkeit</div></div>';
   if (e) h += `<p>Liste: <span class="badge ${toxClass(e.katze)}">Katze: ${esc(e.katze)}</span><span class="badge ${toxClass(e.hund)}">Hund: ${esc(e.hund)}</span></p>`;
   if (S(g.katze) || S(g.hund)) h += `<p>Claude: <span class="badge ${toxClass(S(g.katze))}">Katze: ${T(g.katze) || 'unbekannt'}</span><span class="badge ${toxClass(S(g.hund))}">Hund: ${T(g.hund) || 'unbekannt'}</span></p>`;
   if (e && (S(g.katze) || S(g.hund))) {
@@ -532,7 +532,7 @@ function mergedCard(p, e) {
   const mensch = [S(g.mensch) || (e && e.mensch) || '', S(g.hinweis)].filter(Boolean).join(' ');
   if (mensch) h += `<p class="muted">Menschen und Hinweis: ${esc(mensch)}</p>`;
   if ([e && e.katze, e && e.hund, g.katze, g.hund].some(v => v && !/^ungiftig/i.test(String(v)))) h += '<p class="muted">Für Haustiere und Kleinkinder unerreichbar aufstellen.</p>';
-  if (d && AI.A(d.unsicherheiten).length) h += `<p><b>Unsicher bei</b></p>${AI.ul(d.unsicherheiten)}`;
+  if (d && AI.A(d.unsicherheiten).length) h += `<div class="kv"><div class="k">Unsicher bei</div><div class="v">${AI.ul(d.unsicherheiten)}</div></div>`;
   h += `<p class="hint">${e ? 'Liste: Richtwerte (ASPCA als Orientierung), nicht einzeln geprüft. ' : ''}${d ? `Claude-Auswertung vom ${fmtDE(p.aiInfo.d)} (${esc(p.aiInfo.model)}), nicht geprüft. ` : ''}Kein Ersatz für Tierarzt, Arzt oder Fachberatung. Töpfe, Standort und Raumklima beeinflussen den Bedarf: erst Finger-Probe, dann gießen.</p>`;
   if (!d) h += `<p class="muted">Ausführlichere Pflege, Probleme und Giftigkeit plus Zweitmeinung zur Art holt Claude anhand deines Fotos${p.photo ? '' : ' (dafür ein Foto bei der Pflanze speichern)'}.</p>`;
   h += `<div class="actions"><button class="small" data-aiinfo="${p.id}">${d ? 'Neu abfragen' : 'Infos holen'}</button><a class="btn small sec" href="#scan/krank/${p.id}">Gesundheit prüfen</a></div><div id="aiinfo-out"></div>`;
