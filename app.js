@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 5 (10.10.2026)';
+const VERSION = 'Version 7 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -202,6 +202,7 @@ routes.pflanze = ([id]) => {
     <p class="muted">Zuletzt gegossen: ${fmtDE(p.lastWatered)} · Intervall: alle ${waterInterval(p)} Tage${waterInterval(p) !== Number(p.waterDays) ? ` (Winter, sonst ${p.waterDays})` : ''}</p>
     ${p.fertDays ? `<p class="muted">Zuletzt gedüngt: ${fmtDE(p.lastFert)} · alle ${p.fertDays} Tage (März bis September)</p>` : ''}
     ${p.notes ? `<p>${esc(p.notes).replace(/\n/g, '<br>')}</p>` : ''}</div>`;
+  if (e && p.dbApprox) h += `<div class="warnbox">Pflege- und Giftangaben stammen von einer verwandten Art (${esc(e.name)}). Nur ein Anhaltspunkt, bitte prüfen.</div>`;
   if (e) h += `<div class="card"><div class="name">Pflege</div><p>Licht: ${esc(e.licht)}</p><p>${esc(e.tipp)}</p>
     <p class="hint">Richtwerte. Töpfe, Standort und Raumklima beeinflussen den Bedarf stark: erst Finger-Probe, dann gießen.</p></div>`;
   h += toxBlock(e);
@@ -215,7 +216,14 @@ routes.pflanze = ([id]) => {
 function formView(p, fromScan) {
   const isNew = !p.id;
   const opts = DB.map(d => `<option value="${d.id}" ${d.id === p.dbId ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
-  render(isNew ? 'Neue Pflanze' : 'Bearbeiten', `<form id="f">
+  let formScanFile = null, formBusy = false, formResults = [];
+  const scanCard = isNew ? `<div class="card"><div class="name">Per Foto erkennen</div>
+    <p class="muted">Foto aufnehmen oder wählen, dann den passenden Vorschlag antippen. Das Formular füllt sich automatisch.</p>
+    <div class="actions">
+      <div class="pick"><span class="btn small">📷 Foto aufnehmen</span><input id="fcam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
+      <div class="pick"><span class="btn sec small">🖼 Aus Galerie</span><input id="fgal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
+    </div><div id="fres"></div></div>` : '';
+  render(isNew ? 'Neue Pflanze' : 'Bearbeiten', `${scanCard}<form id="f">
     <label>Aus Pflanzenliste übernehmen (füllt Pflegewerte vor)</label>
     <select name="dbId"><option value="">– eigene Pflanze –</option>${opts}</select>
     <label>Name</label><input name="name" required value="${esc(p.name || '')}" autocomplete="off">
@@ -231,6 +239,34 @@ function formView(p, fromScan) {
     <div class="actions"><button type="submit">Speichern</button><a class="btn sec" href="#${isNew ? 'sammlung' : 'pflanze/' + p.id}">Abbrechen</a></div>
   </form>`);
   const f = $('#f');
+  if (isNew) {
+    const pickForm = async e => {
+      const file = e.target.files && e.target.files[0]; e.target.value = ''; if (!file || formBusy) return;
+      formScanFile = file; formBusy = true; const out = $('#fres');
+      out.innerHTML = '<p><span class="spin"></span> Erkenne …</p>';
+      try {
+        formResults = await plantnetLookup(file);
+        out.innerHTML = formResults.length
+          ? '<p class="muted">Passenden Vorschlag antippen:</p>' + formResults.map((r, i) => `<button type="button" class="sec" style="display:block;width:100%;text-align:left;margin:6px 0" data-fpick="${i}">${esc((r.species.commonNames || [])[0] || r.species.scientificNameWithoutAuthor)}<br><span class="hint">${esc(r.species.scientificNameWithoutAuthor)} · Sicherheit ${Math.round(r.score * 100)} %</span></button>`).join('')
+            + '<p class="hint">Bei geringer Sicherheit nicht verlassen. Foto wird beim Speichern der Pflanze zugeordnet.</p>'
+          : '<p class="muted">Keine Pflanze erkannt. Anderes Foto versuchen oder die Felder selbst ausfüllen.</p>';
+      } catch (err) { out.innerHTML = `<div class="warnbox">${lookupErrorHTML(err)}</div>`; }
+      finally { formBusy = false; }
+    };
+    $('#fcam').addEventListener('change', pickForm);
+    $('#fgal').addEventListener('change', pickForm);
+    $('#fres').addEventListener('click', ev => {
+      const btn = ev.target.closest('button[data-fpick]'); if (!btn) return;
+      const r = formResults[Number(btn.dataset.fpick)]; const sci = r.species.scientificNameWithoutAuthor;
+      const common = (r.species.commonNames || [])[0] || sci; const m = dbMatch(sci); const el = f.elements;
+      el.name.value = common; el.latin.value = sci;
+      p.dbId = m ? m.entry.id : ''; p.dbApprox = !!(m && !m.exact);
+      el.dbId.value = p.dbId;
+      if (m) { el.waterDays.value = m.entry.wasser_tage; el.fertDays.value = m.entry.duenger_tage; }
+      el.notes.value = p.dbApprox ? `Pflegewerte geschätzt nach verwandter Art (${m.entry.name}).` : '';
+      toast('Formular ausgefüllt'); el.name.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
   f.dbId.addEventListener('change', () => {
     const el = f.elements, e = dbById(el.dbId.value); if (!e) return;
     if (!el.name.value) el.name.value = e.name; el.latin.value = e.latin;
@@ -240,6 +276,7 @@ function formView(p, fromScan) {
     ev.preventDefault();
     const fd = new FormData(f);
     const rec = isNew ? { id: uid(), created: today(), log: [] } : p;
+    const origDbId = p.dbId, origApprox = !!p.dbApprox;
     Object.assign(rec, {
       name: fd.get('name').trim(), latin: fd.get('latin').trim(), dbId: fd.get('dbId') || '',
       location: fd.get('location'), waterDays: Number(fd.get('waterDays')) || 7,
@@ -247,10 +284,13 @@ function formView(p, fromScan) {
       lastFert: fd.get('lastFert') || '', notes: fd.get('notes').trim()
     });
     if (!rec.dbId) { const m = dbMatch(rec.latin); if (m && m.exact) rec.dbId = m.entry.id; }
+    rec.dbApprox = origApprox && rec.dbId === origDbId;
     const file = fd.get('photo');
     if (file && file.size) {
       try { const b = await shrink(file, 640, 0.8); if (rec.photo) await delPhoto(rec.photo); rec.photo = await putPhoto(b); }
       catch (e) { toast('Foto konnte nicht gespeichert werden'); }
+    } else if (formScanFile) {
+      try { rec.photo = await putPhoto(await shrink(formScanFile, 640, 0.8)); } catch (e) { toast('Foto konnte nicht gespeichert werden'); }
     } else if (fromScan && fromScan.photo) rec.photo = fromScan.photo;
     if (isNew) state.plants.push(rec);
     save(); toast('Gespeichert'); go('pflanze/' + rec.id);
@@ -297,34 +337,44 @@ routes.scan = () => {
   });
 };
 
+async function plantnetLookup(file) {
+  if (!state.settings.plantnetKey) { const e = new Error('Schlüssel fehlt'); e.code = 'nokey'; throw e; }
+  let blob;
+  try { blob = await shrink(file, 1024, 0.85); if (!blob) throw new Error(); }
+  catch { throw new Error('Das Foto konnte nicht gelesen werden. Bitte ein anderes Foto versuchen.'); }
+  const fd = new FormData(); fd.append('images', blob, 'foto.jpg'); fd.append('organs', 'auto');
+  const base = (state.settings.proxy || PLANTNET).replace(/\/$/, '');
+  const url = `${base}/v2/identify/all?api-key=${encodeURIComponent(state.settings.plantnetKey)}&lang=de&nb-results=3&include-related-images=false`;
+  const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 30000);
+  let res; try { res = await fetch(url, { method: 'POST', body: fd, signal: ctl.signal }); } finally { clearTimeout(to); }
+  if (res.status === 404) return [];
+  if (!res.ok) {
+    let body = ''; try { body = (await res.text()).replace(/\s+/g, ' ').trim().slice(0, 200); } catch {}
+    if (res.status === 429) throw new Error('Tageslimit erreicht. Morgen wieder versuchen.');
+    const k = state.settings.plantnetKey;
+    const keyInfo = `Gespeicherter Schlüssel: ${k.length} Zeichen, Anfang „${k.slice(0, 4)}“, Ende „${k.slice(-4)}“.`;
+    if (res.status === 401 || res.status === 403)
+      throw new Error(`Pl@ntNet lehnt die Anfrage ab (Code ${res.status}). Antwort des Dienstes: „${body || 'leer'}“. ${keyInfo} Prüfe auf my.plantnet.org/settings/api-key: Schlüssel freigegeben, Domain martin290827-dev.github.io gespeichert, und es ist der private Schlüssel.`);
+    throw new Error(`Fehler vom Dienst (Code ${res.status}). Antwort: „${body || 'leer'}“.`);
+  }
+  const data = await res.json();
+  return (data.results || []).slice(0, 3);
+}
+function lookupErrorHTML(e) {
+  if (e.code === 'nokey') return 'Für die Erkennung fehlt der Pl@ntNet-Schlüssel. <a href="#einstellungen">Unter „Mehr“ eintragen</a>, danach das Foto erneut wählen.';
+  if (e.name === 'AbortError') return 'Zeitüberschreitung nach 30 Sekunden. Netz prüfen und noch einmal versuchen.';
+  if (e instanceof TypeError) return 'Verbindung zu Pl@ntNet fehlgeschlagen (' + esc(e.message) + '). Kein Netz, oder der Browser blockiert die Anfrage. Wenn es dauerhaft passiert, melde dich bei Claude mit dieser Meldung.';
+  return esc(e.message);
+}
+
 async function identify() {
   const out = $('#scanres'); if (!out || scanBusy) return;
   if (!scanFile) { out.innerHTML = '<div class="warnbox">Bitte zuerst ein Foto aufnehmen oder aus der Galerie wählen.</div>'; return; }
-  if (!state.settings.plantnetKey) { out.innerHTML = '<div class="warnbox">Für die Erkennung fehlt der Pl@ntNet-Schlüssel. <a href="#einstellungen">Unter „Mehr“ eintragen</a>, danach das Foto erneut wählen.</div>'; return; }
   scanBusy = true;
   out.innerHTML = '<p><span class="spin"></span> Erkenne …</p>';
   try {
-    let blob;
-    try { blob = await shrink(scanFile, 1024, 0.85); if (!blob) throw new Error(); }
-    catch { throw new Error('Das Foto konnte nicht gelesen werden. Bitte ein anderes Foto versuchen.'); }
-    const fd = new FormData(); fd.append('images', blob, 'foto.jpg'); fd.append('organs', 'auto');
-    const base = (state.settings.proxy || PLANTNET).replace(/\/$/, '');
-    const url = `${base}/v2/identify/all?api-key=${encodeURIComponent(state.settings.plantnetKey)}&lang=de&nb-results=3&include-related-images=false`;
-    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 30000);
-    let res; try { res = await fetch(url, { method: 'POST', body: fd, signal: ctl.signal }); } finally { clearTimeout(to); }
-    if (res.status === 404) { out.innerHTML = '<p class="muted">Keine Pflanze erkannt. Anderes Foto versuchen (Blatt oder Blüte, gutes Licht).</p>'; return; }
-    if (!res.ok) {
-      let body = ''; try { body = (await res.text()).replace(/\s+/g, ' ').trim().slice(0, 200); } catch {}
-      if (res.status === 429) throw new Error('Tageslimit erreicht. Morgen wieder versuchen.');
-      const k = state.settings.plantnetKey;
-      const keyInfo = `Gespeicherter Schlüssel: ${k.length} Zeichen, Anfang „${k.slice(0, 4)}“, Ende „${k.slice(-4)}“.`;
-      if (res.status === 401 || res.status === 403)
-        throw new Error(`Pl@ntNet lehnt die Anfrage ab (Code ${res.status}). Antwort des Dienstes: „${body || 'leer'}“. ${keyInfo} Prüfe auf my.plantnet.org/settings/api-key: Schlüssel freigegeben, Domain martin290827-dev.github.io gespeichert, und es ist der private Schlüssel.`);
-      throw new Error(`Fehler vom Dienst (Code ${res.status}). Antwort: „${body || 'leer'}“.`);
-    }
-    const data = await res.json();
-    const results = (data.results || []).slice(0, 3);
-    if (!results.length) { out.innerHTML = '<p class="muted">Keine Treffer.</p>'; return; }
+    const results = await plantnetLookup(scanFile);
+    if (!results.length) { out.innerHTML = '<p class="muted">Keine Pflanze erkannt. Anderes Foto versuchen (Blatt oder Blüte, gutes Licht).</p>'; return; }
     window.__scanResults = results;
     out.innerHTML = results.map((r, i) => {
       const sci = r.species.scientificNameWithoutAuthor, common = (r.species.commonNames || [])[0] || '';
@@ -336,11 +386,7 @@ async function identify() {
       <div class="actions"><button class="small" data-add="${i}">Zur Sammlung</button><button class="small sec" data-wish="${i}">Wunschliste</button></div></div>`;
     }).join('') + '<p class="hint">Erkennung per Pl@ntNet (https://my.plantnet.org). Bei geringer Sicherheit nicht verlassen, besonders bei Giftigkeit.</p>';
   } catch (e) {
-    let msg;
-    if (e.name === 'AbortError') msg = 'Zeitüberschreitung nach 30 Sekunden. Netz prüfen und nochmal „Erkennen“ tippen.';
-    else if (e instanceof TypeError) msg = 'Verbindung zu Pl@ntNet fehlgeschlagen (' + esc(e.message) + '). Kein Netz, oder der Browser blockiert die Anfrage. Wenn es dauerhaft passiert, melde dich bei Claude mit dieser Meldung.';
-    else msg = esc(e.message);
-    out.innerHTML = `<div class="warnbox">${msg}</div>`;
+    out.innerHTML = `<div class="warnbox">${lookupErrorHTML(e)}</div>`;
   } finally { scanBusy = false; }
 }
 
@@ -417,8 +463,9 @@ document.addEventListener('click', async e => {
     const r = window.__scanResults[Number(D.add ?? D.wish)]; const sci = r.species.scientificNameWithoutAuthor;
     const common = (r.species.commonNames || [])[0] || sci;
     if (D.wish != null) { state.wishlist.push({ id: uid(), name: common, note: sci }); save(); toast('Auf Wunschliste'); return; }
-    const m = dbMatch(sci); const e2 = m && m.exact ? m.entry : null;
-    const pre = { name: common, latin: sci, dbId: e2 ? e2.id : '', waterDays: e2 ? e2.wasser_tage : 7, fertDays: e2 ? e2.duenger_tage : '' };
+    const m = dbMatch(sci); const e2 = m ? m.entry : null; const approx = !!(m && !m.exact);
+    const pre = { name: common, latin: sci, dbId: e2 ? e2.id : '', dbApprox: approx, waterDays: e2 ? e2.wasser_tage : 7, fertDays: e2 ? e2.duenger_tage : '',
+      notes: approx ? `Pflegewerte geschätzt nach verwandter Art (${e2.name}).` : '' };
     if (scanFile) { try { pre.photo = await putPhoto(await shrink(scanFile, 640, 0.8)); } catch {} }
     window.__prefill = pre; go('neu');
   }
