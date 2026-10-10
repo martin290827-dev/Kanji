@@ -28,7 +28,7 @@ Antworte ausschließlich mit gültigem JSON nach dem vorgegebenen Schema, ohne T
  "substrat_umtopfen": "...", "temperatur_luftfeuchte": "...", "winter": "...",
  "haeufige_probleme": ["..."],
  "giftigkeit": {"katze": "giftig|ungiftig|unbekannt", "hund": "giftig|ungiftig|unbekannt", "mensch": "...", "hinweis": "..."},
- "zweitmeinung_art": {"einschaetzung": "Was die Fotos zur Art sagen (nur wenn ein Foto dabei ist, sonst leer)", "sicherheit": "hoch|mittel|niedrig", "merkmale_zum_pruefen": ["woran man die Art selbst prüfen kann"]},
+ "zweitmeinung_art": {"latein": "wissenschaftlicher Name, den du auf dem Foto siehst (nur wenn Foto dabei)", "name_de": "deutscher Name", "einschaetzung": "Was die Fotos zur Art sagen (nur wenn ein Foto dabei ist, sonst leer)", "sicherheit": "hoch|mittel|niedrig", "merkmale_zum_pruefen": ["woran man die Art selbst prüfen kann"]},
  "unsicherheiten": ["..."]
 }`,
     art: `{

@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 10 (10.10.2026)';
+const VERSION = 'Version 11 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -203,10 +203,7 @@ routes.pflanze = ([id]) => {
     ${p.fertDays ? `<p class="muted">Zuletzt gedüngt: ${fmtDE(p.lastFert)} · alle ${p.fertDays} Tage (März bis September)</p>` : ''}
     ${p.notes ? `<p>${esc(p.notes).replace(/\n/g, '<br>')}</p>` : ''}</div>`;
   if (e && p.dbApprox) h += `<div class="warnbox">Pflege- und Giftangaben stammen von einer verwandten Art (${esc(e.name)}). Nur ein Anhaltspunkt, bitte prüfen.</div>`;
-  if (e) h += `<div class="card"><div class="name">Pflege</div><p>Licht: ${esc(e.licht)}</p><p>${esc(e.tipp)}</p>
-    <p class="hint">Richtwerte. Töpfe, Standort und Raumklima beeinflussen den Bedarf stark: erst Finger-Probe, dann gießen.</p></div>`;
-  h += toxBlock(e);
-  h += aiInfoCard(p);
+  h += mergedCard(p, e);
   const log = (p.log || []).slice(-8).reverse();
   if (log.length) h += `<div class="card"><div class="name">Verlauf</div>${log.map(l => `<div class="muted">${fmtDE(l.d)} · ${l.t === 'water' ? 'gegossen' : 'gedüngt'}</div>`).join('')}</div>`;
   h += `<div class="actions"><a class="btn sec" href="#bearbeiten/${p.id}">Bearbeiten</a><button class="danger" data-del="${p.id}">Löschen</button></div>`;
@@ -497,6 +494,53 @@ function aiScanView(mode, pid) {
   });
 }
 
+
+/* ---------- Zusammengeführte Pflege-Karte (Liste + Claude) ---------- */
+const normSp = x => String(x || '').toLowerCase().replace(/[×x]\s/g, '').trim().split(/\s+/).slice(0, 2).join(' ');
+function mergedCard(p, e) {
+  const d = p.aiInfo && p.aiInfo.data, T = AI.t, S = AI.S;
+  let h = '<div class="card"><div class="name">Pflege und Infos</div>';
+  const z = d && d.zweitmeinung_art;
+  if (z && S(z.latein)) {
+    const same = normSp(z.latein) === normSp(p.latin);
+    if (same) h += `<p><span class="badge ok">Claude bestätigt die Art</span> <span class="hint">${T(z.latein)}, Sicherheit ${T(z.sicherheit)}</span></p>`;
+    else if (p.aiKeep !== normSp(z.latein)) h += `<div class="warnbox"><b>Claude sieht eine andere Art</b><br>Gespeichert: ${esc(p.latin || 'keine Angabe')}<br>Claude: <b>${T(z.latein)}</b>${S(z.name_de) ? ' (' + T(z.name_de) + ')' : ''}, Sicherheit ${T(z.sicherheit)}<br>${T(z.einschaetzung)}${AI.ul(z.merkmale_zum_pruefen)}
+      <p class="hint">Prüfe die Merkmale an der Pflanze. Es wird nichts automatisch geändert.</p>
+      <div class="actions"><button class="small" data-artswitch="${p.id}">Als ${T(z.latein)} übernehmen</button><button class="small sec" data-artkeep="${p.id}">Bei meiner Art bleiben</button></div></div>`;
+  }
+  if (e && p.dbApprox) h += `<div class="warnbox">Werte aus der Liste stammen von einer verwandten Art (${esc(e.name)}). Nur ein Anhaltspunkt.</div>`;
+  if (d && S(d.kurzbeschreibung)) h += `<p>${T(d.kurzbeschreibung)}</p>`;
+  const row = (title, list, ai) => (list || ai) ? `<p><b>${title}</b><br>${ai ? T(ai) : ''}${list ? `<br><span class="hint">Liste: ${esc(list)}</span>` : ''}</p>` : '';
+  h += row('Licht', e && e.licht, d && d.licht);
+  h += row('Gießen', e && `alle ${e.wasser_tage} Tage, Richtwert`, d && d.giessen);
+  h += row('Düngen', e && (e.duenger_tage ? `alle ${e.duenger_tage} Tage, Richtwert` : 'meist nicht nötig'), d && d.duengen);
+  if (e && e.tipp) h += `<p><b>Tipp</b><br>${esc(e.tipp)}</p>`;
+  if (d) {
+    h += [['Erde und Umtopfen', d.substrat_umtopfen], ['Temperatur und Luftfeuchte', d.temperatur_luftfeuchte], ['Im Winter', d.winter]].map(([k, v]) => S(v) ? `<p><b>${k}</b><br>${T(v)}</p>` : '').join('');
+    if (AI.A(d.haeufige_probleme).length) h += `<p><b>Häufige Probleme</b></p>${AI.ul(d.haeufige_probleme)}`;
+  }
+  // Giftigkeit
+  const g = (d && d.giftigkeit) || {};
+  h += '<p><b>Giftigkeit</b></p>';
+  if (e) h += `<p>Liste: <span class="badge ${toxClass(e.katze)}">Katze: ${esc(e.katze)}</span><span class="badge ${toxClass(e.hund)}">Hund: ${esc(e.hund)}</span></p>`;
+  if (S(g.katze) || S(g.hund)) h += `<p>Claude: <span class="badge ${toxClass(S(g.katze))}">Katze: ${T(g.katze) || 'unbekannt'}</span><span class="badge ${toxClass(S(g.hund))}">Hund: ${T(g.hund) || 'unbekannt'}</span></p>`;
+  if (e && (S(g.katze) || S(g.hund))) {
+    const ng = v => /^ungiftig/i.test(S(v)), diff = (ng(g.katze) !== (e.katze === 'ungiftig') && S(g.katze) !== 'unbekannt') || (ng(g.hund) !== (e.hund === 'ungiftig') && S(g.hund) !== 'unbekannt');
+    if (diff) h += '<div class="warnbox"><b>Die Quellen widersprechen sich.</b> Behandle die Pflanze im Zweifel als giftig und frage bei Verdacht Tierarzt oder Vergiftungsinformationszentrale (01 406 43 43).</div>';
+  }
+  if (!e && !(S(g.katze) || S(g.hund))) h += '<div class="warnbox">Keine Giftigkeits-Daten. Im Zweifel nicht anknabbern lassen. „Infos holen“ fragt Claude.</div>';
+  const mensch = [S(g.mensch) || (e && e.mensch) || '', S(g.hinweis)].filter(Boolean).join(' ');
+  if (mensch) h += `<p class="muted">Menschen und Hinweis: ${esc(mensch)}</p>`;
+  if ([e && e.katze, e && e.hund, g.katze, g.hund].some(v => v && !/^ungiftig/i.test(String(v)))) h += '<p class="muted">Für Haustiere und Kleinkinder unerreichbar aufstellen.</p>';
+  if (d && AI.A(d.unsicherheiten).length) h += `<p><b>Unsicher bei</b></p>${AI.ul(d.unsicherheiten)}`;
+  h += `<p class="hint">${e ? 'Liste: Richtwerte (ASPCA als Orientierung), nicht einzeln geprüft. ' : ''}${d ? `Claude-Auswertung vom ${fmtDE(p.aiInfo.d)} (${esc(p.aiInfo.model)}), nicht geprüft. ` : ''}Kein Ersatz für Tierarzt, Arzt oder Fachberatung. Töpfe, Standort und Raumklima beeinflussen den Bedarf: erst Finger-Probe, dann gießen.</p>`;
+  if (!d) h += `<p class="muted">Ausführlichere Pflege, Probleme und Giftigkeit plus Zweitmeinung zur Art holt Claude anhand deines Fotos${p.photo ? '' : ' (dafür ein Foto bei der Pflanze speichern)'}.</p>`;
+  h += `<div class="actions"><button class="small" data-aiinfo="${p.id}">${d ? 'Neu abfragen' : 'Infos holen'}</button><a class="btn small sec" href="#scan/krank/${p.id}">Gesundheit prüfen</a></div><div id="aiinfo-out"></div>`;
+  const hl = (p.health || []).slice(-1)[0];
+  if (hl) h += `<details><summary>Letzte Gesundheitsprüfung (${fmtDE(hl.d)})</summary>${AI.renderHealth(hl.data)}</details>`;
+  return h + '</div>';
+}
+
 function aiInfoCard(p) {
   const i = p.aiInfo;
   let h = '<div class="card"><div class="name">Mehr Infos (Claude)</div>';
@@ -605,6 +649,19 @@ document.addEventListener('click', async e => {
     if (confirm(`„${p.name}“ wirklich löschen?`)) { if (p.photo) await delPhoto(p.photo); state.plants = state.plants.filter(x => x !== p); save(); go('sammlung'); }
   }
   else if (D.aiinfo) await runAiInfo(D.aiinfo);
+  else if (D.artswitch) {
+    const p = state.plants.find(x => x.id === D.artswitch), z = p && p.aiInfo && p.aiInfo.data && p.aiInfo.data.zweitmeinung_art; if (!z || !z.latein) return;
+    const m = dbMatch(String(z.latein)), oldName = p.name, oldLat = p.latin, oldE = dbById(p.dbId);
+    p.latin = String(z.latein); if (z.name_de && (!p.name || p.name === oldLat || (oldE && p.name === oldE.name))) p.name = String(z.name_de);
+    p.dbId = m ? m.entry.id : ''; p.dbApprox = !!(m && !m.exact);
+    if (m) { p.waterDays = m.entry.wasser_tage; p.fertDays = m.entry.duenger_tage; }
+    p.notes = ((p.notes ? p.notes + '\n' : '') + `Art am ${fmtDE(today())} geändert (vorher: ${oldName}). Pflegewerte ${m ? 'aus der Liste' : 'unverändert'}.`).trim();
+    delete p.aiKeep; delete p.aiInfo; save(); toast('Art geändert. Bitte Infos neu abfragen.'); route();
+  }
+  else if (D.artkeep) {
+    const p = state.plants.find(x => x.id === D.artkeep), z = p && p.aiInfo && p.aiInfo.data && p.aiInfo.data.zweitmeinung_art; if (!z) return;
+    p.aiKeep = normSp(z.latein); save(); route();
+  }
   else if (D.aisave) {
     const p = aiLast && state.plants.find(x => x.id === aiLast.plantId); if (!p) return;
     p.health = [...(p.health || []), { d: today(), model: aiLast.model, data: aiLast.data }].slice(-5); save(); toast('Gespeichert'); go('pflanze/' + p.id);
