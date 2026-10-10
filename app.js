@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 17 (10.10.2026)';
+const VERSION = 'Version 18 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -198,10 +198,14 @@ routes.pflanze = ([id]) => {
   const nf = nextFert(p);
   let h = p.photo ? `<img class="big" data-photo="${esc(p.photo)}" alt="">` : '';
   h += `<div class="card"><div class="name">${esc(p.name)}</div><div class="muted">${esc(p.latin || '')}</div>
-    ${p.room ? `<div class="muted">Raum: ${esc(p.room)}</div>` : ''}
-    ${p.fertDays ? `<div class="row" style="margin:10px 0 2px"><div class="grow"><b>Gedüngt</b><br><span class="muted">${nf ? (fertDone(p) ? 'Zuletzt ' + fmtDE(p.lastFert) + ', nächstes Mal ' + fmtDE(nf) : 'Jetzt fällig') : 'Düngepause bis März'}</span></div>${fertSwitch(p)}</div>` : ''}
+    <div class="kv"><div class="k">Raum</div>
+      <select data-roomsel="${p.id}"><option value="">– kein Raum –</option>${roomList().map(r => `<option ${r === p.room ? 'selected' : ''}>${esc(r)}</option>`).join('')}<option value="__neu">+ Neuer Raum …</option></select>
+      <div id="roomnewbox" class="row" style="display:none;margin-top:8px"><input id="roomnew" class="grow" placeholder="Name des neuen Raums" autocomplete="off"><button class="small" data-roomnew="${p.id}">OK</button></div></div>
+    <div class="kv"><div class="row"><div class="grow"><b>Düngen</b><br><span class="muted">${p.fertDays ? `alle ${p.fertDays} Tage, März bis September` : 'aus, keine Erinnerung'}</span></div>
+      <label class="sw" aria-label="Düngen aktiv"><input type="checkbox" data-fertenable="${p.id}" ${p.fertDays ? 'checked' : ''}><span></span></label></div>
+      ${p.fertDays ? `<div class="row" style="margin-top:10px"><div class="grow"><b>Gedüngt</b><br><span class="muted">${nf ? (fertDone(p) ? 'Zuletzt ' + fmtDE(p.lastFert) + ', nächstes Mal ' + fmtDE(nf) : 'Jetzt fällig') : 'Düngepause bis März'}</span></div>${fertSwitch(p)}</div>
+      <div class="row" style="margin-top:10px"><span class="muted grow">Abstand in Tagen</span><input type="number" min="1" max="180" value="${esc(p.fertDays)}" data-fertdays="${p.id}" style="width:90px"></div>` : ''}</div>
     <p class="muted">Gießen alle ${waterInterval(p)} Tage${waterInterval(p) !== Number(p.waterDays) ? ` (Winter, sonst ${p.waterDays})` : ''}</p>
-    ${p.fertDays ? `<p class="muted">Düngen alle ${p.fertDays} Tage, März bis September${p.lastFert ? '' : '. Noch nie eingetragen.'}</p>` : ''}
     ${p.notes ? `<p>${esc(p.notes).replace(/\n/g, '<br>')}</p>` : ''}</div>`;
   if (e && p.dbApprox) h += `<div class="warnbox">Pflege- und Giftangaben stammen von einer verwandten Art (${esc(e.name)}). Nur ein Anhaltspunkt, bitte prüfen.</div>`;
   h += mergedCard(p, e);
@@ -231,11 +235,8 @@ function formView(p, fromScan) {
     <label>Name</label><input name="name" required value="${esc(p.name || '')}" autocomplete="off">
     <label>Art (botanisch, optional)</label><input name="latin" value="${esc(p.latin || '')}">
     <label>Standort</label><select name="location"><option value="innen" ${p.location !== 'aussen' ? 'selected' : ''}>Drinnen</option><option value="aussen" ${p.location === 'aussen' ? 'selected' : ''}>Draußen</option></select>
-    <label>Raum</label><select name="roomsel"><option value="">– kein Raum –</option>${roomList().map(r => `<option ${r === p.room ? 'selected' : ''}>${esc(r)}</option>`).join('')}<option value="__neu">+ Neuer Raum …</option></select>
-    <input name="room" id="roomnew" placeholder="Name des neuen Raums" autocomplete="off" style="display:none;margin-top:8px">
     <label>Gießen alle (Tage)</label><input name="waterDays" type="number" min="1" max="90" value="${esc(p.waterDays ?? 7)}">
-    <div class="two"><div><label>Düngen alle (Tage, leer = nie)</label><input name="fertDays" type="number" min="0" max="180" value="${esc(p.fertDays ?? '')}"></div>
-    <div><label>Zuletzt gedüngt</label><input name="lastFert" type="date" value="${esc(p.lastFert || '')}"></div></div>
+    <input name="fertDays" type="hidden" value="${esc(p.fertDays ?? '')}"><input name="lastFert" type="hidden" value="${esc(p.lastFert || '')}">
     <label>Notizen</label><textarea name="notes">${esc(p.notes || '')}</textarea>
     <label>Foto</label>${p.photo ? `<img class="thumb" data-photo="${esc(p.photo)}" alt="" style="margin-bottom:6px">` : ''}
     <input name="photo" type="file" accept="image/*">
@@ -270,11 +271,6 @@ function formView(p, fromScan) {
       toast('Formular ausgefüllt'); el.name.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
   }
-  f.elements.roomsel.addEventListener('change', ev => {
-    const neu = ev.target.value === '__neu'; $('#roomnew').style.display = neu ? 'block' : 'none'; if (neu) $('#roomnew').focus();
-    if (['Balkon', 'Garten'].includes(ev.target.value)) f.elements.location.value = 'aussen';
-    else if (ev.target.value && !neu) f.elements.location.value = 'innen';
-  });
   f.dbId.addEventListener('change', () => {
     const el = f.elements, e = dbById(el.dbId.value); if (!e) return;
     if (!el.name.value) el.name.value = e.name; el.latin.value = e.latin;
@@ -287,7 +283,7 @@ function formView(p, fromScan) {
     const origDbId = p.dbId, origApprox = !!p.dbApprox;
     Object.assign(rec, {
       name: fd.get('name').trim(), latin: fd.get('latin').trim(), dbId: fd.get('dbId') || '',
-      location: fd.get('location'), room: (fd.get('roomsel') === '__neu' ? fd.get('room').trim() : fd.get('roomsel')) || '', waterDays: Number(fd.get('waterDays')) || 7,
+      location: fd.get('location'), room: p.room || '', waterDays: Number(fd.get('waterDays')) || 7,
       fertDays: fd.get('fertDays') ? Number(fd.get('fertDays')) : '',
       lastFert: fd.get('lastFert') || '', notes: fd.get('notes').trim()
     });
@@ -679,7 +675,22 @@ function await0(dataUrl) { // dataURL -> Blob (synchron)
 
 /* ---------- Aktionen (Klick-Delegation) ---------- */
 document.addEventListener('change', e => {
-  const t = e.target; if (!t.dataset || !t.dataset.fertsw) return;
+  const t = e.target; if (!t.dataset) return;
+  const D = t.dataset, P = id => state.plants.find(x => x.id === id);
+  if (D.roomsel) {
+    const p = P(D.roomsel); if (!p) return;
+    if (t.value === '__neu') { $('#roomnewbox').style.display = 'flex'; $('#roomnew').focus(); return; }
+    p.room = t.value; if (['Balkon', 'Garten'].includes(t.value)) p.location = 'aussen'; else if (t.value) p.location = 'innen';
+    save(); toast('Raum gespeichert'); route(); return;
+  }
+  if (D.fertenable) {
+    const p = P(D.fertenable); if (!p) return;
+    p.fertDays = t.checked ? ((dbById(p.dbId) || {}).duenger_tage || 28) : ''; save(); route(); return;
+  }
+  if (D.fertdays) {
+    const p = P(D.fertdays), n = Number(t.value); if (!p || !(n >= 1)) return; p.fertDays = Math.min(180, n); save(); toast('Gespeichert'); route(); return;
+  }
+  if (!D.fertsw) return;
   const p = state.plants.find(x => x.id === t.dataset.fertsw); if (!p) return;
   p.log = p.log || [];
   if (t.checked) { p.lastFert = today(); p.log.push({ t: 'fert', d: today() }); toast('Als gedüngt markiert'); }
@@ -697,6 +708,10 @@ document.addEventListener('click', async e => {
   else if (D.del) {
     const p = state.plants.find(x => x.id === D.del);
     if (confirm(`„${p.name}“ wirklich löschen?`)) { if (p.photo) await delPhoto(p.photo); state.plants = state.plants.filter(x => x !== p); save(); go('sammlung'); }
+  }
+  else if (D.roomnew) {
+    const p = state.plants.find(x => x.id === D.roomnew), v = ($('#roomnew').value || '').trim(); if (!p || !v) return;
+    p.room = v; save(); toast('Raum gespeichert'); route();
   }
   else if (D.aiinfo) await runAiInfo(D.aiinfo);
   else if (D.artswitch) {
