@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 9 (10.10.2026)';
+const VERSION = 'Version 10 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -367,7 +367,7 @@ async function claudeLookup(file) {
   if (!state.settings.anthropicKey) { const e = new Error('Schlüssel fehlt'); e.code = 'nokey'; throw e; }
   const blob = await shrink(file, 1024, 0.85);
   if (!blob) throw new Error('Das Foto konnte nicht gelesen werden.');
-  const r = await AI.run('art', 'Bestimme die Pflanze auf dem Foto. Beachte: Zimmerpflanze, Gartenpflanze oder Wildpflanze in Mitteleuropa möglich.', [blob], 700);
+  const r = await AI.run('art', 'Bestimme die Pflanze auf dem Foto. Beachte: Zimmerpflanze, Gartenpflanze oder Wildpflanze in Mitteleuropa möglich.', [blob], 1200);
   const sc = { hoch: .85, mittel: .55, niedrig: .25 };
   return ((r.data && r.data.kandidaten) || []).slice(0, 3).filter(k => k && k.latein).map(k => ({
     src: 'claude', score: sc[k.sicherheit] || .25, label: 'Claude: Sicherheit ' + (k.sicherheit || 'niedrig'), why: k.begruendung || '', check: k.pruefen || '',
@@ -488,7 +488,7 @@ function aiScanView(mode, pid) {
       const text = health
         ? `Aufgabe: Gesundheitscheck einer Pflanze anhand von ${blobs.length} Foto(s). Pflanze laut Nutzer: ${name || 'unbekannt'}. Standort: ${loc}. Beobachtung des Nutzers: "${note || 'keine'}". Aktuelles Datum: ${today()} (Jahreszeit berücksichtigen).`
         : `Aufgabe: Unkraut bestimmen anhand von ${blobs.length} Foto(s). Fundort laut Nutzer: ${place || 'unbekannt'}. Hinweise des Nutzers: "${note || 'keine'}". Aktuelles Datum: ${today()}. Region: Österreich.`;
-      const r = await AI.run(mode, text, blobs, 2500);
+      const r = await AI.run(mode, text, blobs, 6000);
       aiLast = { mode, data: r.data, model: r.model, plantId: plant ? plant.id : null };
       out.innerHTML = (health ? AI.renderHealth(r.data) : AI.renderWeed(r.data)) + usageLine(r.use)
         + (plant && health ? `<div class="actions"><button type="button" data-aisave="1">Ergebnis bei „${esc(plant.name)}“ speichern</button></div>` : '');
@@ -514,7 +514,7 @@ async function runAiInfo(id) {
   try {
     const blobs = []; if (p.photo) { const b = await getPhoto(p.photo); if (b) blobs.push(b); }
     const text = `Aufgabe: ausführliche Pflegeinfos und Giftigkeit zu einer Zimmer- oder Gartenpflanze. Name: ${p.name}. Botanische Art laut Nutzer oder Erkennung: ${p.latin || 'unbekannt'}. Standort: ${p.location === 'aussen' ? 'draußen' : 'drinnen'}. Aktuelles Datum: ${today()}. ${blobs.length ? 'Ein Foto der Pflanze ist beigefügt. Gib eine Zweitmeinung zur Art.' : 'Kein Foto vorhanden, lass zweitmeinung_art leer.'}`;
-    const r = await AI.run('info', text, blobs, 2500);
+    const r = await AI.run('info', text, blobs, 6000);
     p.aiInfo = { d: today(), model: r.model, data: r.data }; save(); toast('Infos gespeichert'); route();
   } catch (e) { out.innerHTML = `<div class="warnbox">${aiErrorHTML(e)}</div>`; }
   finally { aiBusy = false; }
