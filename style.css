@@ -101,3 +101,11 @@ h2.sect{font:700 22px/1.2 -apple-system,sans-serif;text-transform:none;letter-sp
   margin:-34px auto 4px;border:6px solid var(--bg);box-sizing:content-box;width:56px;height:56px}
 .tabs a.cam .camb svg{width:28px;height:28px;margin:0;stroke:var(--green-ink);stroke-width:1.9}
 .tabs a.cam.on{color:var(--green)}
+
+/* Schalter im iOS-Stil */
+.sw{position:relative;display:inline-block;width:51px;height:31px;flex:none;margin:0}
+.sw input{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;padding:0;z-index:1;cursor:pointer}
+.sw span{position:absolute;inset:0;background:rgba(120,120,128,.32);border-radius:99px;transition:background .2s}
+.sw span::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,.3);transition:transform .2s}
+.sw input:checked + span{background:var(--green)}
+.sw input:checked + span::after{transform:translateX(20px)}

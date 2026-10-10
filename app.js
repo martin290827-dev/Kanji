@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 16 (10.10.2026)';
+const VERSION = 'Version 17 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -166,19 +166,21 @@ const thumb = p => p.photo ? `<img class="thumb" data-photo="${esc(p.photo)}" al
 
 routes.heute = () => go('sammlung');
 
+const fertDone = p => { const n = nextFert(p); return !!n && diffDays(today(), n) > 0; };
+const fertSwitch = p => nextFert(p) === null ? '' : `<label class="sw" aria-label="Gedüngt"><input type="checkbox" data-fertsw="${p.id}" ${fertDone(p) ? 'checked' : ''}><span></span></label>`;
+
 /* ---------- Sammlung ---------- */
 routes.sammlung = () => {
   const list = [...state.plants].sort((a, b) => a.name.localeCompare(b.name, 'de'));
   const fert = list.filter(p => { const n = nextFert(p); return n && diffDays(today(), n) <= 0; });
   if (navigator.setAppBadge) { try { fert.length ? navigator.setAppBadge(fert.length) : navigator.clearAppBadge(); } catch {} }
   let h = `<div class="actions"><a class="btn" href="#neu">+ Neue Pflanze</a></div>`;
-  if (fert.length) h += `<h2>Düngen fällig (${fert.length})</h2>` + fert.map(p => `<div class="card row">${thumb(p)}<div class="grow"><a class="name" href="#pflanze/${p.id}" style="color:inherit;text-decoration:none">${esc(p.name)}</a>
-    <div>${statusBadge(nextFert(p), 'Düngen')}</div></div><button class="small" data-fert="${p.id}">Gedüngt</button></div>`).join('');
-  const item = p => { const nf = nextFert(p); return `<a class="card row" href="#pflanze/${p.id}" style="color:inherit;text-decoration:none">${thumb(p)}
+  if (fert.length) h += `<p class="muted">${fert.length === 1 ? '1 Pflanze braucht' : fert.length + ' Pflanzen brauchen'} Dünger. Schalter rechts einschalten, wenn gedüngt.</p>`;
+  const item = p => { const nf = nextFert(p); return `<div class="card row"><a class="row grow" href="#pflanze/${p.id}" style="color:inherit;text-decoration:none">${thumb(p)}
     <div class="grow"><div class="name">${esc(p.name)}</div>
     <div class="muted">${esc(p.latin || '')}${p.latin ? ' · ' : ''}${p.location === 'aussen' ? 'draußen' : 'drinnen'}</div>
     <div class="muted">Gießen alle ${waterInterval(p)} Tage</div>
-    ${nf ? `<div>${statusBadge(nf, 'Düngen')}</div>` : (p.fertDays ? '<div class="muted">Düngepause bis März</div>' : '')}</div></a>`; };
+    ${nf ? `<div>${statusBadge(nf, 'Düngen')}</div>` : (p.fertDays ? '<div class="muted">Düngepause bis März</div>' : '')}</div></a>${fertSwitch(p)}</div>`; };
   if (!list.length) h += `<div class="empty">Deine Sammlung ist leer.</div>`;
   else {
     const rooms = [...new Set(list.map(p => p.room || ''))].sort((x, y) => (x === '') - (y === '') || x.localeCompare(y, 'de'));
@@ -197,10 +199,9 @@ routes.pflanze = ([id]) => {
   let h = p.photo ? `<img class="big" data-photo="${esc(p.photo)}" alt="">` : '';
   h += `<div class="card"><div class="name">${esc(p.name)}</div><div class="muted">${esc(p.latin || '')}</div>
     ${p.room ? `<div class="muted">Raum: ${esc(p.room)}</div>` : ''}
-    ${nf ? `<p>${statusBadge(nf, 'Düngen')}</p>` : ''}
-    ${p.fertDays ? `<div class="actions"><button data-fert="${p.id}">Gedüngt</button></div>` : ''}
+    ${p.fertDays ? `<div class="row" style="margin:10px 0 2px"><div class="grow"><b>Gedüngt</b><br><span class="muted">${nf ? (fertDone(p) ? 'Zuletzt ' + fmtDE(p.lastFert) + ', nächstes Mal ' + fmtDE(nf) : 'Jetzt fällig') : 'Düngepause bis März'}</span></div>${fertSwitch(p)}</div>` : ''}
     <p class="muted">Gießen alle ${waterInterval(p)} Tage${waterInterval(p) !== Number(p.waterDays) ? ` (Winter, sonst ${p.waterDays})` : ''}</p>
-    ${p.fertDays ? `<p><b>Zuletzt gedüngt: ${p.lastFert ? fmtDE(p.lastFert) : 'noch nie'}</b><br><span class="muted">alle ${p.fertDays} Tage, März bis September</span></p>` : ''}
+    ${p.fertDays ? `<p class="muted">Düngen alle ${p.fertDays} Tage, März bis September${p.lastFert ? '' : '. Noch nie eingetragen.'}</p>` : ''}
     ${p.notes ? `<p>${esc(p.notes).replace(/\n/g, '<br>')}</p>` : ''}</div>`;
   if (e && p.dbApprox) h += `<div class="warnbox">Pflege- und Giftangaben stammen von einer verwandten Art (${esc(e.name)}). Nur ein Anhaltspunkt, bitte prüfen.</div>`;
   h += mergedCard(p, e);
@@ -230,8 +231,8 @@ function formView(p, fromScan) {
     <label>Name</label><input name="name" required value="${esc(p.name || '')}" autocomplete="off">
     <label>Art (botanisch, optional)</label><input name="latin" value="${esc(p.latin || '')}">
     <label>Standort</label><select name="location"><option value="innen" ${p.location !== 'aussen' ? 'selected' : ''}>Drinnen</option><option value="aussen" ${p.location === 'aussen' ? 'selected' : ''}>Draußen</option></select>
-    <label>Raum (optional)</label><input name="room" list="rooms" value="${esc(p.room || '')}" placeholder="z. B. Wohnzimmer" autocomplete="off">
-    <datalist id="rooms">${roomList().map(r => `<option value="${esc(r)}">`).join('')}</datalist>
+    <label>Raum</label><select name="roomsel"><option value="">– kein Raum –</option>${roomList().map(r => `<option ${r === p.room ? 'selected' : ''}>${esc(r)}</option>`).join('')}<option value="__neu">+ Neuer Raum …</option></select>
+    <input name="room" id="roomnew" placeholder="Name des neuen Raums" autocomplete="off" style="display:none;margin-top:8px">
     <label>Gießen alle (Tage)</label><input name="waterDays" type="number" min="1" max="90" value="${esc(p.waterDays ?? 7)}">
     <div class="two"><div><label>Düngen alle (Tage, leer = nie)</label><input name="fertDays" type="number" min="0" max="180" value="${esc(p.fertDays ?? '')}"></div>
     <div><label>Zuletzt gedüngt</label><input name="lastFert" type="date" value="${esc(p.lastFert || '')}"></div></div>
@@ -269,6 +270,11 @@ function formView(p, fromScan) {
       toast('Formular ausgefüllt'); el.name.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
   }
+  f.elements.roomsel.addEventListener('change', ev => {
+    const neu = ev.target.value === '__neu'; $('#roomnew').style.display = neu ? 'block' : 'none'; if (neu) $('#roomnew').focus();
+    if (['Balkon', 'Garten'].includes(ev.target.value)) f.elements.location.value = 'aussen';
+    else if (ev.target.value && !neu) f.elements.location.value = 'innen';
+  });
   f.dbId.addEventListener('change', () => {
     const el = f.elements, e = dbById(el.dbId.value); if (!e) return;
     if (!el.name.value) el.name.value = e.name; el.latin.value = e.latin;
@@ -281,7 +287,7 @@ function formView(p, fromScan) {
     const origDbId = p.dbId, origApprox = !!p.dbApprox;
     Object.assign(rec, {
       name: fd.get('name').trim(), latin: fd.get('latin').trim(), dbId: fd.get('dbId') || '',
-      location: fd.get('location'), room: fd.get('room').trim(), waterDays: Number(fd.get('waterDays')) || 7,
+      location: fd.get('location'), room: (fd.get('roomsel') === '__neu' ? fd.get('room').trim() : fd.get('roomsel')) || '', waterDays: Number(fd.get('waterDays')) || 7,
       fertDays: fd.get('fertDays') ? Number(fd.get('fertDays')) : '',
       lastFert: fd.get('lastFert') || '', notes: fd.get('notes').trim()
     });
@@ -672,6 +678,17 @@ function await0(dataUrl) { // dataURL -> Blob (synchron)
 }
 
 /* ---------- Aktionen (Klick-Delegation) ---------- */
+document.addEventListener('change', e => {
+  const t = e.target; if (!t.dataset || !t.dataset.fertsw) return;
+  const p = state.plants.find(x => x.id === t.dataset.fertsw); if (!p) return;
+  p.log = p.log || [];
+  if (t.checked) { p.lastFert = today(); p.log.push({ t: 'fert', d: today() }); toast('Als gedüngt markiert'); }
+  else {
+    const k = p.log.map(l => l.t).lastIndexOf('fert'); if (k >= 0) p.log.splice(k, 1);
+    const prev = p.log.filter(l => l.t === 'fert').pop(); p.lastFert = prev ? prev.d : ''; toast('Düngung zurückgenommen');
+  }
+  p.log = p.log.slice(-40); save(); route();
+});
 document.addEventListener('click', async e => {
   const t = e.target.closest('button'); if (!t) return;
   const D = t.dataset;
