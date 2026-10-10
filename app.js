@@ -3,6 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
+const VERSION = 'Version 4 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -267,14 +268,12 @@ routes.scan = () => {
     <p class="muted">Foto von Blatt, Blüte oder der ganzen Pflanze. Das Bild wird zur Erkennung an Pl@ntNet gesendet.</p>
     ${hasKey ? '' : '<div class="warnbox">Noch kein Pl@ntNet-Schlüssel hinterlegt. <a href="#einstellungen">Jetzt unter „Mehr“ eintragen</a> (kostenlos, 500 Erkennungen pro Tag).</div>'}
     <div class="actions">
-      <label class="btn" for="scancam">📷 Foto aufnehmen</label>
-      <label class="btn sec" for="scangal">🖼 Aus Galerie</label>
+      <div class="pick"><span class="btn">📷 Foto aufnehmen</span><input id="scancam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
+      <div class="pick"><span class="btn sec">🖼 Aus Galerie</span><input id="scangal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
     </div>
-    <input id="scancam" class="vh" type="file" accept="image/*" capture="environment">
-    <input id="scangal" class="vh" type="file" accept="image/*">
     <img id="scanprev" class="big" style="display:none;margin-top:6px" alt="">
     <div class="actions"><button id="scango" type="button" class="sec">Erkennen</button></div>
-    <div id="scanres"></div></div>
+    <div id="scanres"></div><p class="hint">${VERSION}</p></div>
   <div class="card"><div class="name">Giftig oder nicht? Nachschlagen</div>
     <input id="q" placeholder="z. B. Monstera, Lilie, Basilikum" autocomplete="off">
     <div id="qres"></div></div>`);
@@ -366,6 +365,7 @@ routes.einstellungen = () => {
     <div class="actions"><button id="exp" class="sec">Exportieren</button><label class="btn sec" style="margin:0">Importieren<input id="imp" type="file" accept="application/json" hidden></label></div></div>
   <div class="card"><div class="name">Auf den Home-Bildschirm</div>
     <p class="muted">In Safari öffnen, Teilen-Symbol tippen, „Zum Home-Bildschirm“ wählen. Nur so gelten Kamera-Zugriff und Zahl am Icon zuverlässig.</p></div>
+  <p class="hint">${VERSION}</p>
   <p class="hint">Pflanzenerkennung: Pl@ntNet. Pflegewerte und Giftangaben sind Richtwerte und kein Ersatz für Fachrat.</p>`);
   $('#saveset').onclick = () => {
     s.plantnetKey = $('#key').value.trim(); s.proxy = $('#proxy').value.trim(); s.winter = $('#winter').checked; save(); toast('Gespeichert');
