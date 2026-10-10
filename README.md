@@ -1,4 +1,4 @@
-# Pflanzen-App (PWA)
+# Kanji (Pflanzen-App als PWA)
 
 Persönliche Pflanzen-App für iPhone. Läuft als Web-App ohne App Store, ohne Server und ohne laufende Kosten.
 
