@@ -122,3 +122,42 @@ h2.sect{font:700 22px/1.2 -apple-system,sans-serif;text-transform:none;letter-sp
 .cropview img{position:absolute;max-width:none;user-select:none;-webkit-user-select:none;pointer-events:none}
 #cz{padding:0;background:none;height:32px}
 input[type=range]{-webkit-appearance:auto;appearance:auto;accent-color:var(--green);padding:0;height:32px;background:none}
+
+/* Feinschliff: ruhiger, aufgeräumter */
+.top{display:flex;align-items:center;justify-content:space-between;border-bottom:0;padding-bottom:10px}
+.top h1{font-size:30px;letter-spacing:.2px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plus{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;background:var(--green);color:var(--green-ink);
+  text-decoration:none;font-size:26px;line-height:1;font-weight:400;flex:none;margin-left:12px;padding-bottom:3px}
+.plus:active{opacity:.6}
+main{padding-top:4px}
+h2.rh{margin:20px 16px 6px}
+.group{background:var(--card);border-radius:var(--radius);overflow:hidden;margin:6px 0}
+.group.pad{padding:6px 16px 14px}
+.group.pad > p:first-child{margin-top:10px}
+.lrow{display:flex;align-items:center;gap:12px;padding:12px 16px;min-height:54px;border-top:.5px solid var(--line)}
+.lrow:first-child{border-top:0}
+.lrow .l{flex:1;min-width:0}
+.lmain{display:flex;align-items:center;gap:12px;flex:1;min-width:0;color:inherit;text-decoration:none}
+.lmain .thumb{width:52px;height:52px;border-radius:12px}
+.sub{font-size:13px;color:var(--muted);line-height:1.3}
+.due-t{color:var(--warn);font-weight:600}
+.inl{width:auto;max-width:60%;background:none;padding:0;text-align:right;text-align-last:right;color:var(--muted);font-size:17px;border-radius:0}
+select.inl{color:var(--green);font-weight:500}
+input.num{width:70px;color:var(--ink)}
+.foot{display:flex;justify-content:center;gap:32px;margin:26px 0 8px}
+.foot a,.foot .link{background:none;padding:6px 4px;font-weight:500;color:var(--green);text-decoration:none;font-size:17px}
+.foot .link.danger{color:var(--bad);background:none}
+.btn.block,.pick.grow .btn{display:block;width:100%}
+.pick.grow{flex:1;min-width:130px}
+.group.pad .kv:first-of-type{border-top:0}
+.kv .v{font-size:16px}
+.empty .btn{margin-top:4px}
+.seg{margin:6px 0 10px}
+.big{border-radius:var(--radius)}
+.group.pad .actions{margin-top:12px}
+.group.pad .big{margin-top:10px}
+.cover{margin-bottom:6px}
+main > .big.cover{margin-top:8px}
+
+.btn{white-space:nowrap}
+.pick.grow .btn{padding:12px 8px}

@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 20 (10.10.2026)';
+const VERSION = 'Version 21 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -166,8 +166,9 @@ function route() {
   window.scrollTo(0, 0);
 }
 const go = h => { location.hash = h; };
-const render = (title, html) => { titleEl.textContent = title; view.innerHTML = html; fillPhotos(); };
-const thumb = p => coverOf(p) ? `<img class="thumb" data-photo="${esc(coverOf(p))}" alt="">` : `<div class="thumb">🌿</div>`;
+const render = (title, html, act = '') => { titleEl.textContent = title; $('#topact').innerHTML = act; view.innerHTML = html; fillPhotos(); };
+const LEAF = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21v-8M12 13c0-4-3-6-7-6 0 4 3 6 7 6zM12 13c0-3.500 2.500-5.500 6-5.500 0 3.500-2.500 5.500-6 5.500z"/></svg>';
+const thumb = p => coverOf(p) ? `<img class="thumb" data-photo="${esc(coverOf(p))}" alt="">` : `<div class="thumb" style="color:var(--muted)">${LEAF}</div>`;
 
 routes.heute = () => go('sammlung');
 
@@ -179,21 +180,18 @@ routes.sammlung = () => {
   const list = [...state.plants].sort((a, b) => a.name.localeCompare(b.name, 'de'));
   const fert = list.filter(p => { const n = nextFert(p); return n && diffDays(today(), n) <= 0; });
   if (navigator.setAppBadge) { try { fert.length ? navigator.setAppBadge(fert.length) : navigator.clearAppBadge(); } catch {} }
-  let h = `<div class="actions"><a class="btn" href="#neu">+ Neue Pflanze</a></div>`;
-  if (fert.length) h += `<p class="muted">${fert.length === 1 ? '1 Pflanze braucht' : fert.length + ' Pflanzen brauchen'} Dünger. Schalter rechts einschalten, wenn gedüngt.</p>`;
-  const item = p => { const nf = nextFert(p); return `<div class="card row"><a class="row grow" href="#pflanze/${p.id}" style="color:inherit;text-decoration:none">${thumb(p)}
+  const fstat = p => { const n = nextFert(p); if (!n) return ''; const d = diffDays(today(), n); return d <= 0 ? '<span class="due-t">Düngen fällig</span>' : `Düngen in ${d} T.`; };
+  const item = p => `<div class="lrow"><a class="lmain" href="#pflanze/${p.id}">${thumb(p)}
     <div class="grow"><div class="name">${esc(p.name)}</div>
-    <div class="muted">${esc(p.latin || '')}${p.latin ? ' · ' : ''}${p.location === 'aussen' ? 'draußen' : 'drinnen'}</div>
-    <div class="muted">Gießen alle ${waterInterval(p)} Tage</div>
-    ${nf ? `<div>${statusBadge(nf, 'Düngen')}</div>` : (p.fertDays ? '<div class="muted">Düngepause bis März</div>' : '')}</div></a>${fertSwitch(p)}</div>`; };
-  if (!list.length) h += `<div class="empty">Deine Sammlung ist leer.</div>`;
+    ${p.latin ? `<div class="sub">${esc(p.latin)}</div>` : ''}
+    <div class="sub">Gießen alle ${waterInterval(p)} Tage${fstat(p) ? ' · ' + fstat(p) : ''}</div></div></a>${fertSwitch(p)}</div>`;
+  let h = '';
+  if (!list.length) h = `<div class="empty">Noch keine Pflanzen.<br><br><a class="btn" href="#neu">Pflanze hinzufügen</a></div>`;
   else {
     const rooms = [...new Set(list.map(p => p.room || ''))].sort((x, y) => (x === '') - (y === '') || x.localeCompare(y, 'de'));
-    if (rooms.length === 1 && rooms[0] === '') h += list.map(item).join('');
-    else h += rooms.map(r => `<h2>${esc(r || 'Ohne Raum')} (${list.filter(p => (p.room || '') === r).length})</h2>` + list.filter(p => (p.room || '') === r).map(item).join('')).join('');
+    h = rooms.map(r => `${rooms.length > 1 || r ? `<h2 class="rh">${esc(r || 'Ohne Raum')}</h2>` : ''}<div class="group">${list.filter(p => (p.room || '') === r).map(item).join('')}</div>`).join('');
   }
-  if (state.settings.winter && isWinter() && list.length) h += `<p class="hint">Winter-Modus aktiv: Gießabstände bei Zimmerpflanzen ×1,5, kein Düngen.</p>`;
-  render(`Sammlung (${list.length})`, h);
+  render('Pflanzen', h, '<a class="plus" href="#neu" aria-label="Neue Pflanze">+</a>');
 };
 
 
@@ -202,15 +200,13 @@ let selPhoto = null;
 function galleryCard(p) {
   const ph = photosOf(p);
   if (selPhoto && !ph.includes(selPhoto)) selPhoto = null;
-  let h = `<div class="card"><div class="cardhead" style="font-size:19px">Fotos (${ph.length})</div>`;
+  let h = '<h2 class="rh">Fotos</h2><div class="group pad">';
   if (ph.length) h += `<div class="thumbs">${ph.map(id => `<button type="button" class="ph ${id === selPhoto ? 'sel' : ''}" data-phsel="${id}" aria-label="Foto wählen"><img src="" data-photo="${esc(id)}" alt="">${id === p.photo ? '<span class="cov">Titelbild</span>' : ''}</button>`).join('')}</div>`;
-  else h += '<p class="muted">Noch kein Foto.</p>';
-  if (selPhoto) h += `<div class="kv"><img class="big" data-photo="${esc(selPhoto)}" alt="" style="max-height:340px">
-    <div class="actions">${selPhoto !== p.photo ? `<button class="small" data-phcover="${p.id}">Als Titelbild</button>` : '<span class="badge ok">Ist das Titelbild</span>'}
-    ${selPhoto === p.photo ? `<button class="small sec" data-crop="${p.id}">Ausschnitt anpassen</button>` : ''}
-    <button class="small danger" data-phdel="${p.id}">Löschen</button><button class="small sec" data-phsel="">Schließen</button></div></div>`;
-  h += `<div class="actions"><div class="pick"><span class="btn small">📷 Foto aufnehmen</span><input data-phadd="${p.id}" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
-    <div class="pick"><span class="btn sec small">🖼 Aus Galerie</span><input data-phadd="${p.id}" type="file" accept="image/*" multiple aria-label="Fotos aus Galerie wählen"></div></div></div>`;
+  if (selPhoto) h += `<img class="big" data-photo="${esc(selPhoto)}" alt="" style="max-height:340px;margin-top:8px">
+    <div class="actions">${selPhoto !== p.photo ? `<button class="small" data-phcover="${p.id}">Als Titelbild</button>` : `<button class="small" data-crop="${p.id}">Ausschnitt anpassen</button>`}
+    <button class="small danger" data-phdel="${p.id}">Löschen</button><button class="small sec" data-phsel="">Schließen</button></div>`;
+  h += `<div class="actions"><div class="pick"><span class="btn small sec">Foto aufnehmen</span><input data-phadd="${p.id}" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
+    <div class="pick"><span class="btn small sec">Aus Galerie</span><input data-phadd="${p.id}" type="file" accept="image/*" multiple aria-label="Fotos aus Galerie wählen"></div></div></div>`;
   return h;
 }
 
@@ -257,22 +253,20 @@ routes.pflanze = ([id]) => {
   const e = dbById(p.dbId);
   const nf = nextFert(p);
   let h = coverOf(p) ? `<img class="big cover" data-photo="${esc(coverOf(p))}" alt="">` : '';
-  h += `<div class="card"><div class="name">${esc(p.name)}</div><div class="muted">${esc(p.latin || '')}</div>
-    <div class="kv"><div class="k">Raum</div>
-      <select data-roomsel="${p.id}"><option value="">– kein Raum –</option>${roomList().map(r => `<option ${r === p.room ? 'selected' : ''}>${esc(r)}</option>`).join('')}<option value="__neu">+ Neuer Raum …</option></select>
-      <div id="roomnewbox" class="row" style="display:none;margin-top:8px"><input id="roomnew" class="grow" placeholder="Name des neuen Raums" autocomplete="off"><button class="small" data-roomnew="${p.id}">OK</button></div></div>
-    <div class="kv"><div class="row"><div class="grow"><b>Düngen</b><br><span class="muted">${p.fertDays ? `alle ${p.fertDays} Tage, März bis September` : 'aus, keine Erinnerung'}</span></div>
+  if (p.latin) h += `<p class="muted" style="margin:2px 4px 8px">${esc(p.latin)}</p>`;
+  h += `<div class="group">
+    <div class="lrow"><span class="l">Raum</span><select class="inl" data-roomsel="${p.id}"><option value="">Kein Raum</option>${roomList().map(r => `<option ${r === p.room ? 'selected' : ''}>${esc(r)}</option>`).join('')}<option value="__neu">Neuer Raum …</option></select></div>
+    <div id="roomnewbox" class="lrow" style="display:none"><input id="roomnew" class="grow" placeholder="Name des neuen Raums" autocomplete="off"><button class="small" data-roomnew="${p.id}">OK</button></div>
+    <div class="lrow"><span class="l">Gießen</span><span class="muted">alle ${waterInterval(p)} Tage${waterInterval(p) !== Number(p.waterDays) ? ' (Winter)' : ''}</span></div>
+    <div class="lrow"><div class="l">Düngen<div class="sub">${p.fertDays ? `alle ${p.fertDays} Tage, März bis September` : 'keine Erinnerung'}</div></div>
       <label class="sw" aria-label="Düngen aktiv"><input type="checkbox" data-fertenable="${p.id}" ${p.fertDays ? 'checked' : ''}><span></span></label></div>
-      ${p.fertDays ? `<div class="row" style="margin-top:10px"><div class="grow"><b>Gedüngt</b><br><span class="muted">${nf ? (fertDone(p) ? 'Zuletzt ' + fmtDE(p.lastFert) + ', nächstes Mal ' + fmtDE(nf) : 'Jetzt fällig') : 'Düngepause bis März'}</span></div>${fertSwitch(p)}</div>
-      <div class="row" style="margin-top:10px"><span class="muted grow">Abstand in Tagen</span><input type="number" min="1" max="180" value="${esc(p.fertDays)}" data-fertdays="${p.id}" style="width:90px"></div>` : ''}</div>
-    <p class="muted">Gießen alle ${waterInterval(p)} Tage${waterInterval(p) !== Number(p.waterDays) ? ` (Winter, sonst ${p.waterDays})` : ''}</p>
-    ${p.notes ? `<p>${esc(p.notes).replace(/\n/g, '<br>')}</p>` : ''}</div>`;
-  if (e && p.dbApprox) h += `<div class="warnbox">Pflege- und Giftangaben stammen von einer verwandten Art (${esc(e.name)}). Nur ein Anhaltspunkt, bitte prüfen.</div>`;
+    ${p.fertDays ? `<div class="lrow"><div class="l">Gedüngt<div class="sub">${nf ? (fertDone(p) ? 'Zuletzt ' + fmtDE(p.lastFert) + ', nächstes Mal ' + fmtDE(nf) : 'Jetzt fällig') : 'Düngepause bis März'}</div></div>${fertSwitch(p)}</div>
+    <div class="lrow"><span class="l">Abstand in Tagen</span><input class="inl num" type="number" min="1" max="180" value="${esc(p.fertDays)}" data-fertdays="${p.id}"></div>` : ''}
+    ${p.notes ? `<div class="lrow"><span class="l" style="white-space:pre-wrap">${esc(p.notes)}</span></div>` : ''}</div>`;
+  if (e && p.dbApprox) h += `<div class="warnbox">Werte stammen von einer verwandten Art (${esc(e.name)}). Nur ein Anhaltspunkt.</div>`;
   h += mergedCard(p, e);
   h += galleryCard(p);
-  const log = (p.log || []).slice(-8).reverse();
-  if (log.length) h += `<div class="card"><div class="name">Verlauf</div>${log.map(l => `<div class="muted">${fmtDE(l.d)} · ${l.t === 'water' ? 'gegossen' : 'gedüngt'}</div>`).join('')}</div>`;
-  h += `<div class="actions"><a class="btn sec" href="#bearbeiten/${p.id}">Bearbeiten</a><button class="danger" data-del="${p.id}">Löschen</button></div>`;
+  h += `<div class="foot"><a href="#bearbeiten/${p.id}">Bearbeiten</a><button class="link danger" data-del="${p.id}">Löschen</button></div>`;
   render(p.name, h);
 };
 
@@ -285,25 +279,25 @@ function formView(p, fromScan) {
   const opts = DB.map(d => `<option value="${d.id}" ${d.id === p.dbId ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
   let formScanFile = null, formBusy = false, formResults = [];
   const scanCard = isNew ? `<div class="card"><div class="name">Per Foto erkennen</div>
-    <p class="muted">Foto aufnehmen oder wählen, dann den passenden Vorschlag antippen. Das Formular füllt sich automatisch.</p>
     <div class="actions">
-      <div class="pick"><span class="btn small">📷 Foto aufnehmen</span><input id="fcam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
-      <div class="pick"><span class="btn sec small">🖼 Aus Galerie</span><input id="fgal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
+      <div class="pick"><span class="btn small">Foto aufnehmen</span><input id="fcam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
+      <div class="pick"><span class="btn sec small">Aus Galerie</span><input id="fgal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
     </div><div id="fres"></div></div>` : '';
   render(isNew ? 'Neue Pflanze' : 'Bearbeiten', `${scanCard}<form id="f">
-    <label>Aus Pflanzenliste übernehmen (füllt Pflegewerte vor)</label>
+    <label>Vorlage</label>
     <select name="dbId"><option value="">– eigene Pflanze –</option>${opts}</select>
     <label>Name</label><input name="name" required value="${esc(p.name || '')}" autocomplete="off">
-    <label>Art (botanisch, optional)</label><input name="latin" value="${esc(p.latin || '')}">
+    <label>Botanischer Name</label><input name="latin" value="${esc(p.latin || '')}">
     <label>Standort</label><select name="location"><option value="innen" ${p.location !== 'aussen' ? 'selected' : ''}>Drinnen</option><option value="aussen" ${p.location === 'aussen' ? 'selected' : ''}>Draußen</option></select>
     <label>Gießen alle (Tage)</label><input name="waterDays" type="number" min="1" max="90" value="${esc(p.waterDays ?? 7)}">
     <input name="fertDays" type="hidden" value="${esc(p.fertDays ?? '')}"><input name="lastFert" type="hidden" value="${esc(p.lastFert || '')}">
     <label>Notizen</label><textarea name="notes">${esc(p.notes || '')}</textarea>
-    <label>${isNew ? 'Foto' : 'Neues Titelbild (optional, weitere Fotos auf der Pflanzenseite)'}</label>${coverOf(p) ? `<img class="thumb" data-photo="${esc(coverOf(p))}" alt="" style="margin-bottom:6px">` : ''}
-    <input name="photo" type="file" accept="image/*">
+    <label>${isNew ? 'Foto' : 'Neues Titelbild'}</label>${coverOf(p) ? `<img class="thumb" data-photo="${esc(coverOf(p))}" alt="" style="margin-bottom:6px">` : ''}
+    <div class="pick"><span class="btn sec small" id="photolbl">Foto wählen</span><input name="photo" type="file" accept="image/*" aria-label="Foto wählen"></div>
     <div class="actions"><button type="submit">Speichern</button><a class="btn sec" href="#${isNew ? 'sammlung' : 'pflanze/' + p.id}">Abbrechen</a></div>
   </form>`);
   const f = $('#f');
+  f.elements.photo.addEventListener('change', ev => { const n = ev.target.files[0]; $('#photolbl').textContent = n ? 'Foto gewählt' : 'Foto wählen'; });
   if (isNew) {
     const pickForm = async e => {
       const file = e.target.files && e.target.files[0]; e.target.value = ''; if (!file || formBusy) return;
@@ -313,7 +307,6 @@ function formView(p, fromScan) {
         const L = await lookupAll(file); formResults = L.items;
         out.innerHTML = formResults.length
           ? '<p class="muted">Passenden Vorschlag antippen:</p>' + L.note.map(n => `<p class="hint">${esc(n)}</p>`).join('') + formResults.map((r, i) => `<button type="button" class="sec" style="display:block;width:100%;text-align:left;margin:6px 0" data-fpick="${i}">${esc((r.species.commonNames || [])[0] || r.species.scientificNameWithoutAuthor)}<br><span class="hint">${esc(r.species.scientificNameWithoutAuthor)} · ${esc(r.label)}</span></button>`).join('')
-            + '<p class="hint">Bei geringer Sicherheit nicht verlassen. Foto wird beim Speichern der Pflanze zugeordnet.</p>'
           : '<p class="muted">Keine Pflanze erkannt. Anderes Foto versuchen oder die Felder selbst ausfüllen.</p>';
       } catch (err) { out.innerHTML = `<div class="warnbox">${lookupErrorHTML(err)}</div>`; }
       finally { formBusy = false; }
@@ -368,18 +361,15 @@ routes.bearbeiten = ([id]) => { const p = state.plants.find(x => x.id === id); i
 let scanFile = null, scanBusy = false;
 routes.scanPlant = () => {
   scanFile = null;
-  const hasKey = !!state.settings.plantnetKey;
-  render('Scan', `${modeTabs('pflanze')}<div class="card"><div class="name">Pflanze erkennen</div>
-    <p class="muted">Foto von Blatt, Blüte oder der ganzen Pflanze. Das Bild geht zur Erkennung an Pl@ntNet und/oder Claude (siehe „Mehr → Einstellungen“).</p>
-    ${hasKey || state.settings.anthropicKey ? '' : '<div class="warnbox">Noch kein Schlüssel hinterlegt. <a href="#einstellungen">Jetzt unter „Mehr → Einstellungen“ eintragen</a> (kostenlos, 500 Erkennungen pro Tag).</div>'}
-    <div class="actions">
-      <div class="pick"><span class="btn">📷 Foto aufnehmen</span><input id="scancam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
-      <div class="pick"><span class="btn sec">🖼 Aus Galerie</span><input id="scangal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
+  const noKey = !state.settings.plantnetKey && !state.settings.anthropicKey;
+  render('Scan', `${modeTabs('pflanze')}<div class="group pad">
+    ${noKey ? '<div class="warnbox">Kein Schlüssel hinterlegt. <a href="#einstellungen">In den Einstellungen eintragen</a>.</div>' : ''}
+    <img id="scanprev" class="big" style="display:none;margin:0 0 10px" alt="">
+    <div class="actions" style="margin-top:0">
+      <div class="pick grow"><span class="btn block">Foto aufnehmen</span><input id="scancam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
+      <div class="pick grow"><span class="btn sec block">Aus Galerie</span><input id="scangal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
     </div>
-    <img id="scanprev" class="big" style="display:none;margin-top:6px" alt="">
-    <div class="actions"><button id="scango" type="button" class="sec">Erkennen</button></div>
-    <div id="scanres"></div><p class="hint">${VERSION}</p></div>
-`);
+    <div id="scanres"></div></div>`);
   const pick = e => {
     const f = e.target.files && e.target.files[0]; e.target.value = '';
     if (!f) return;
@@ -390,7 +380,6 @@ routes.scanPlant = () => {
   };
   $('#scancam').addEventListener('change', pick);
   $('#scangal').addEventListener('change', pick);
-  $('#scango').addEventListener('click', identify);
 };
 
 routes.giftig = () => {
@@ -492,7 +481,7 @@ async function identify() {
       ${m ? `<span class="badge ${toxClass(m.entry.katze)}">Katze: ${esc(m.entry.katze)}</span><span class="badge ${toxClass(m.entry.hund)}">Hund: ${esc(m.entry.hund)}</span>${m.exact ? '' : '<p class="hint">Giftangabe gilt für verwandte Art derselben Gattung, nur Anhaltspunkt.</p>'}`
         : '<p class="hint">Keine Giftigkeits-Daten in der App.</p>'}
       <div class="actions"><button class="small" data-add="${i}">Zur Sammlung</button><button class="small sec" data-wish="${i}">Wunschliste</button></div></div>`;
-    }).join('') + '<p class="hint">Erkennung per Pl@ntNet (https://my.plantnet.org) und/oder Claude. Bei geringer Sicherheit nicht verlassen, besonders bei Giftigkeit.</p>';
+    }).join('') + '<p class="hint">Pl@ntNet und/oder Claude. Bei geringer Sicherheit nicht verlassen, besonders bei Giftigkeit.</p>';
   } catch (e) {
     out.innerHTML = `<div class="warnbox">${lookupErrorHTML(e)}</div>`;
   } finally { scanBusy = false; }
@@ -502,7 +491,7 @@ async function identify() {
 /* ---------- KI: Krankheit und Unkraut per Foto, Pflanzen-Infos ---------- */
 const modeTabs = mode => `<div class="seg">
   <a href="#scan" class="${mode === 'pflanze' ? 'on' : ''}">Pflanze</a>
-  <a href="#scan/krank" class="${mode === 'krank' ? 'on' : ''}">Krankheit</a>
+  <a href="#scan/krank" class="${mode === 'krank' ? 'on' : ''}">Diagnose</a>
   <a href="#scan/unkraut" class="${mode === 'unkraut' ? 'on' : ''}">Unkraut</a></div>`;
 const spinner = '<p><span class="spin"></span> Claude wertet aus … (bis zu 30 Sekunden)</p>';
 function aiErrorHTML(e) {
@@ -522,13 +511,13 @@ function aiScanView(mode, pid) {
   const health = mode === 'krank';
   const hasKey = !!state.settings.anthropicKey;
   render('Scan', `${modeTabs(mode)}<div class="card"><div class="name">${health ? 'Pflanzenkrankheit beurteilen' : 'Unkraut bestimmen'}</div>
-    <p class="muted">${health ? 'Foto von kranken Blättern, Stielen oder der ganzen Pflanze. Bis zu 3 Fotos (zum Beispiel nah und weit) verbessern die Einschätzung.' : 'Foto vom Unkraut im Beet oder Rasen. Ein Foto von Blatt und Blüte hilft. Bis zu 3 Fotos.'} Die Fotos gehen zur Auswertung an Claude (Anthropic).</p>
+    
     ${hasKey ? '' : '<div class="warnbox">Noch kein Claude-Schlüssel hinterlegt. <a href="#einstellungen">Unter „Mehr → Einstellungen“ eintragen</a>.</div>'}
     ${plant ? `<p>Pflanze: <b>${esc(plant.name)}</b></p>` : (health ? '<label>Welche Pflanze? (optional)</label><input id="aiplant" autocomplete="off">' : '<label>Wo wächst es? (optional)</label><input id="aiplace" placeholder="z. B. Beet, Rasen, Gehweg" autocomplete="off">')}
     <label>${health ? 'Was fällt dir auf? (optional)' : 'Weitere Hinweise (optional)'}</label><textarea id="ainote"></textarea>
     <div class="actions">
-      <div class="pick"><span class="btn small">📷 Foto aufnehmen</span><input id="aicam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
-      <div class="pick"><span class="btn sec small">🖼 Aus Galerie</span><input id="aigal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
+      <div class="pick"><span class="btn small">Foto aufnehmen</span><input id="aicam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
+      <div class="pick"><span class="btn sec small">Aus Galerie</span><input id="aigal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
     </div>
     <div id="aithumbs" class="thumbs"></div>
     <div class="actions"><button id="aigo" type="button">Auswerten</button></div><div id="aires"></div></div>`);
@@ -570,43 +559,40 @@ function aiScanView(mode, pid) {
 const normSp = x => String(x || '').toLowerCase().replace(/[×x]\s/g, '').trim().split(/\s+/).slice(0, 2).join(' ');
 function mergedCard(p, e) {
   const d = p.aiInfo && p.aiInfo.data, T = AI.t, S = AI.S;
-  let h = '<div class="card"><div class="cardhead">Pflege und Infos</div>';
+  let h = '<h2 class="rh">Pflege</h2><div class="group pad">';
   const z = d && d.zweitmeinung_art;
   if (z && S(z.latein)) {
     const same = normSp(z.latein) === normSp(p.latin);
-    if (same) h += `<p><span class="badge ok">Claude bestätigt die Art</span> <span class="hint">${T(z.latein)}, Sicherheit ${T(z.sicherheit)}</span></p>`;
+    if (same) h += `<p><span class="badge ok">Claude bestätigt die Art</span></p>`;
     else if (p.aiKeep !== normSp(z.latein)) h += `<div class="warnbox"><b>Claude sieht eine andere Art</b><br>Gespeichert: ${esc(p.latin || 'keine Angabe')}<br>Claude: <b>${T(z.latein)}</b>${S(z.name_de) ? ' (' + T(z.name_de) + ')' : ''}, Sicherheit ${T(z.sicherheit)}<br>${T(z.einschaetzung)}${AI.ul(z.merkmale_zum_pruefen)}
-      <p class="hint">Prüfe die Merkmale an der Pflanze. Es wird nichts automatisch geändert.</p>
       <div class="actions"><button class="small" data-artswitch="${p.id}">Als ${T(z.latein)} übernehmen</button><button class="small sec" data-artkeep="${p.id}">Bei meiner Art bleiben</button></div></div>`;
   }
-  if (e && p.dbApprox) h += `<div class="warnbox">Werte aus der Liste stammen von einer verwandten Art (${esc(e.name)}). Nur ein Anhaltspunkt.</div>`;
   if (d && S(d.kurzbeschreibung)) h += `<p>${T(d.kurzbeschreibung)}</p>`;
-  const row = (title, list, ai) => (list || ai) ? `<div class="kv"><div class="k">${title}</div><div class="v">${ai ? T(ai) : esc(list)}</div>${ai && list ? `<div class="src">Liste: ${esc(list)}</div>` : ''}</div>` : '';
+  const row = (title, list, ai) => (list || ai) ? `<div class="kv"><div class="k">${title}</div><div class="v">${ai ? T(ai) : esc(list)}</div></div>` : '';
   h += row('Licht', e && e.licht, d && d.licht);
-  h += row('Gießen', e && `alle ${e.wasser_tage} Tage, Richtwert`, d && d.giessen);
-  h += row('Düngen', e && (e.duenger_tage ? `alle ${e.duenger_tage} Tage, Richtwert` : 'meist nicht nötig'), d && d.duengen);
-  if (e && e.tipp) h += `<div class="kv"><div class="k">Tipp</div><div class="v">${esc(e.tipp)}</div></div>`;
+  h += row('Gießen', '', d && d.giessen);
+  h += row('Düngen', '', d && d.duengen);
+  if (!d && e && e.tipp) h += `<div class="kv"><div class="k">Tipp</div><div class="v">${esc(e.tipp)}</div></div>`;
   if (d) {
     h += [['Erde und Umtopfen', d.substrat_umtopfen], ['Temperatur und Luftfeuchte', d.temperatur_luftfeuchte], ['Im Winter', d.winter]].map(([k, v]) => S(v) ? `<div class="kv"><div class="k">${k}</div><div class="v">${T(v)}</div></div>` : '').join('');
     if (AI.A(d.haeufige_probleme).length) h += `<div class="kv"><div class="k">Häufige Probleme</div><div class="v">${AI.ul(d.haeufige_probleme)}</div></div>`;
   }
   // Giftigkeit
-  const g = (d && d.giftigkeit) || {};
-  h += '<div class="kv"><div class="k">Giftigkeit</div></div>';
-  if (e) h += `<p>Liste: <span class="badge ${toxClass(e.katze)}">Katze: ${esc(e.katze)}</span><span class="badge ${toxClass(e.hund)}">Hund: ${esc(e.hund)}</span></p>`;
-  if (S(g.katze) || S(g.hund)) h += `<p>Claude: <span class="badge ${toxClass(S(g.katze))}">Katze: ${T(g.katze) || 'unbekannt'}</span><span class="badge ${toxClass(S(g.hund))}">Hund: ${T(g.hund) || 'unbekannt'}</span></p>`;
-  if (e && (S(g.katze) || S(g.hund))) {
-    const ng = v => /^ungiftig/i.test(S(v)), diff = (ng(g.katze) !== (e.katze === 'ungiftig') && S(g.katze) !== 'unbekannt') || (ng(g.hund) !== (e.hund === 'ungiftig') && S(g.hund) !== 'unbekannt');
-    if (diff) h += '<div class="warnbox"><b>Die Quellen widersprechen sich.</b> Behandle die Pflanze im Zweifel als giftig und frage bei Verdacht Tierarzt oder Vergiftungsinformationszentrale (01 406 43 43).</div>';
-  }
-  if (!e && !(S(g.katze) || S(g.hund))) h += '<div class="warnbox">Keine Giftigkeits-Daten. Im Zweifel nicht anknabbern lassen. „Infos holen“ fragt Claude.</div>';
+  const g = (d && d.giftigkeit) || {}, hasAi = S(g.katze) || S(g.hund);
+  const kk = hasAi ? S(g.katze) || 'unbekannt' : e && e.katze, hh = hasAi ? S(g.hund) || 'unbekannt' : e && e.hund;
+  h += '<div class="kv"><div class="k">Giftigkeit</div><div class="v">';
+  if (kk || hh) h += `<span class="badge ${toxClass(kk)}">Katze: ${esc(kk || 'unbekannt')}</span><span class="badge ${toxClass(hh)}">Hund: ${esc(hh || 'unbekannt')}</span>`;
+  else h += '<span class="muted">Keine Daten. Im Zweifel nicht anknabbern lassen.</span>';
   const mensch = [S(g.mensch) || (e && e.mensch) || '', S(g.hinweis)].filter(Boolean).join(' ');
-  if (mensch) h += `<p class="muted">Menschen und Hinweis: ${esc(mensch)}</p>`;
-  if ([e && e.katze, e && e.hund, g.katze, g.hund].some(v => v && !/^ungiftig/i.test(String(v)))) h += '<p class="muted">Für Haustiere und Kleinkinder unerreichbar aufstellen.</p>';
+  if (mensch) h += `<div class="sub" style="margin-top:4px">${esc(mensch)}</div>`;
+  h += '</div></div>';
+  if (e && hasAi) {
+    const ng = v => /^ungiftig/i.test(S(v)), diff = (ng(g.katze) !== (e.katze === 'ungiftig') && S(g.katze) !== 'unbekannt') || (ng(g.hund) !== (e.hund === 'ungiftig') && S(g.hund) !== 'unbekannt');
+    if (diff) h += `<div class="warnbox"><b>Die Quellen widersprechen sich.</b> Die Liste sagt Katze: ${esc(e.katze)}, Hund: ${esc(e.hund)}. Behandle die Pflanze im Zweifel als giftig (Vergiftungsinformationszentrale 01 406 43 43).</div>`;
+  }
   if (d && AI.A(d.unsicherheiten).length) h += `<div class="kv"><div class="k">Unsicher bei</div><div class="v">${AI.ul(d.unsicherheiten)}</div></div>`;
-  h += `<p class="hint">${e ? 'Liste: Richtwerte (ASPCA als Orientierung), nicht einzeln geprüft. ' : ''}${d ? `Claude-Auswertung vom ${fmtDE(p.aiInfo.d)} (${esc(p.aiInfo.model)}), nicht geprüft. ` : ''}Kein Ersatz für Tierarzt, Arzt oder Fachberatung. Töpfe, Standort und Raumklima beeinflussen den Bedarf: erst Finger-Probe, dann gießen.</p>`;
-  if (!d) h += `<p class="muted">Ausführlichere Pflege, Probleme und Giftigkeit plus Zweitmeinung zur Art holt Claude anhand deines Fotos${p.photo ? '' : ' (dafür ein Foto bei der Pflanze speichern)'}.</p>`;
-  h += `<div class="actions"><button class="small" data-aiinfo="${p.id}">${d ? 'Neu abfragen' : 'Infos holen'}</button><a class="btn small sec" href="#scan/krank/${p.id}">Gesundheit prüfen</a></div><div id="aiinfo-out"></div>`;
+  h += `<p class="hint">Richtwerte${d ? ' und KI-Auswertung vom ' + fmtDE(p.aiInfo.d) : ''}, nicht geprüft. Kein Ersatz für Tierarzt, Arzt oder Fachberatung.</p>`;
+  h += `<div class="actions"><button class="small" data-aiinfo="${p.id}">${d ? 'Neu abfragen' : 'Mit Claude ergänzen'}</button><a class="btn small sec" href="#scan/krank/${p.id}">Gesundheit prüfen</a></div><div id="aiinfo-out"></div>`;
   const hl = (p.health || []).slice(-1)[0];
   if (hl) h += `<details><summary>Letzte Gesundheitsprüfung (${fmtDE(hl.d)})</summary>${AI.renderHealth(hl.data)}</details>`;
   return h + '</div>';
@@ -674,15 +660,15 @@ routes.mehr = () => {
 routes.einstellungen = () => {
   const s = state.settings;
   render('Einstellungen', `<div class="card"><div class="name">Pl@ntNet-Schlüssel</div>
-    <p class="muted">Kostenlos auf my.plantnet.org (Konto anlegen, API-Schlüssel kopieren). Der Schlüssel bleibt nur auf diesem Gerät.</p>
+    <p class="muted">Kostenlos auf my.plantnet.org. Der Schlüssel bleibt nur auf diesem Gerät.</p>
     <input id="key" value="${esc(s.plantnetKey)}" placeholder="API-Schlüssel" autocomplete="off" autocapitalize="off">
-    <label>Proxy-Adresse (optional, nur falls die direkte Anfrage blockiert wird)</label>
+    <label>Proxy (optional)</label>
     <input id="proxy" value="${esc(s.proxy)}" placeholder="https://…" autocapitalize="off">
     <label>Darstellung</label><select id="theme">${[['auto','Automatisch (wie iPhone)'],['light','Hell (Tag)'],['dark','Dunkel (Nacht)']].map(([k, v]) => `<option value="${k}" ${(s.theme || 'auto') === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
-    <label><input id="winter" type="checkbox" style="width:auto" ${s.winter ? 'checked' : ''}> Winter-Modus (Nov–Feb: drinnen seltener gießen)</label>
+    <div class="lrow" style="padding-left:0;padding-right:0"><div class="l">Winter-Modus<div class="sub">November bis Februar: drinnen seltener gießen</div></div><label class="sw"><input id="winter" type="checkbox" ${s.winter ? 'checked' : ''}><span></span></label></div>
     <div class="actions"><button id="saveset">Speichern</button></div></div>
-  <div class="card"><div class="name">Claude-Schlüssel (für Infos, Krankheit, Unkraut)</div>
-    <p class="muted">Eigener API-Schlüssel von platform.claude.com. Bleibt nur auf diesem Gerät. Jede Auswertung kostet Geld. Setze in der Console unter Billing ein niedriges Ausgabenlimit.</p>
+  <div class="card"><div class="name">Claude-Schlüssel</div>
+    <p class="muted">Schlüssel von platform.claude.com. Jede Auswertung kostet Geld, setze in der Console ein Ausgabenlimit.</p>
     <input id="akey" value="${esc(s.anthropicKey || '')}" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off">
     <label>Pflanzenerkennung per Foto</label><select id="aerk">${[['beide','Beide (Pl@ntNet und Claude, ca. 1 Cent)'],['plantnet','Nur Pl@ntNet (gratis)'],['claude','Nur Claude']].map(([k, v]) => `<option value="${k}" ${(s.erkennung || 'beide') === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
     <label>Modell</label><select id="amodel">${Object.entries(AI.MODELS).map(([k, v]) => `<option value="${k}" ${(s.aiModel || AI.DEFAULT_MODEL) === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
@@ -691,13 +677,11 @@ routes.einstellungen = () => {
     <p class="hint">Bisher: ${(s.aiUsage || {}).calls || 0} Auswertungen, ${((s.aiUsage || {}).inTok || 0) + ((s.aiUsage || {}).outTok || 0)} Tokens, geschätzt ${(((s.aiUsage || {}).usd || 0) * 100).toFixed(1)} Cent (Schätzung nach Listenpreis, maßgeblich ist die Console).
     <a href="#einstellungen" id="resetuse">Zähler zurücksetzen</a></p></div>
   <div class="card"><div class="name">Backup</div>
-    <p class="muted">Daten liegen nur auf diesem Gerät. iOS kann Browserdaten löschen, wenn die App lange nicht genutzt wird. Exportiere regelmäßig.</p>
+    <p class="muted">Daten liegen nur auf diesem Gerät. Exportiere regelmäßig.</p>
     <div class="actions"><button id="exp" class="sec">Exportieren</button><div class="pick"><span class="btn sec">Importieren</span><input id="imp" type="file" accept="application/json,.json" aria-label="Backup importieren"></div></div>
     <p class="hint">Tipp: Beim Exportieren öffnet sich das Teilen-Menü. Wähle „In Dateien sichern“ und speichere in iCloud Drive, am besten in einem Ordner „Kanji-Backup“. Beim Importieren wählst du diese Datei wieder aus.</p></div>
-  <div class="card"><div class="name">Auf den Home-Bildschirm</div>
-    <p class="muted">In Safari öffnen, Teilen-Symbol tippen, „Zum Home-Bildschirm“ wählen. Nur so gelten Kamera-Zugriff und Zahl am Icon zuverlässig.</p></div>
   <p class="hint">${VERSION}</p>
-  <p class="hint">Pflanzenerkennung: Pl@ntNet. Pflegewerte und Giftangaben sind Richtwerte und kein Ersatz für Fachrat.</p>`);
+  <p class="hint">Pflanzenerkennung: Pl@ntNet (my.plantnet.org)</p>`);
   $('#theme').onchange = () => { s.theme = $('#theme').value; applyTheme(); save(); };
   $('#saveset').onclick = () => {
     s.plantnetKey = $('#key').value.trim(); s.proxy = $('#proxy').value.trim(); s.winter = $('#winter').checked; s.theme = $('#theme').value; applyTheme(); save(); toast('Gespeichert');
