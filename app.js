@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 14 (10.10.2026)';
+const VERSION = 'Version 15 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -26,7 +26,7 @@ function toast(msg) {
 }
 
 /* ---------- Speicher ---------- */
-const defaults = () => ({ plants: [], wishlist: [], settings: { plantnetKey: '', proxy: '', winter: true, anthropicKey: '', aiModel: 'claude-sonnet-5-5', erkennung: 'beide', aiUsage: { calls: 0, inTok: 0, outTok: 0, usd: 0 } } });
+const defaults = () => ({ plants: [], wishlist: [], settings: { plantnetKey: '', proxy: '', winter: true, anthropicKey: '', aiModel: 'claude-sonnet-5-5', erkennung: 'beide', theme: 'auto', aiUsage: { calls: 0, inTok: 0, outTok: 0, usd: 0 } } });
 let state = defaults();
 function load() {
   try { const raw = localStorage.getItem(KEY); if (raw) state = { ...defaults(), ...JSON.parse(raw) }; }
@@ -141,6 +141,14 @@ function toxBlock(e) {
     <p class="hint">Richtwerte nach ASPCA-Liste, nicht einzeln geprüft. Kein Ersatz für Tierarzt oder Giftnotruf (Österreich: Vergiftungsinformationszentrale, 01 406 43 43).</p>
   </div>`;
 }
+
+function applyTheme() {
+  const t = (state.settings && state.settings.theme) || 'auto', r = document.documentElement;
+  if (t === 'light' || t === 'dark') r.setAttribute('data-theme', t); else r.removeAttribute('data-theme');
+  const dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = dark ? '#000000' : '#f2f2f7';
+}
+applyTheme();
 
 /* ---------- Router ---------- */
 const routes = {};
@@ -579,6 +587,7 @@ routes.einstellungen = () => {
     <input id="key" value="${esc(s.plantnetKey)}" placeholder="API-Schlüssel" autocomplete="off" autocapitalize="off">
     <label>Proxy-Adresse (optional, nur falls die direkte Anfrage blockiert wird)</label>
     <input id="proxy" value="${esc(s.proxy)}" placeholder="https://…" autocapitalize="off">
+    <label>Darstellung</label><select id="theme">${[['auto','Automatisch (wie iPhone)'],['light','Hell (Tag)'],['dark','Dunkel (Nacht)']].map(([k, v]) => `<option value="${k}" ${(s.theme || 'auto') === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
     <label><input id="winter" type="checkbox" style="width:auto" ${s.winter ? 'checked' : ''}> Winter-Modus (Nov–Feb: drinnen seltener gießen)</label>
     <div class="actions"><button id="saveset">Speichern</button></div></div>
   <div class="card"><div class="name">Claude-Schlüssel (für Infos, Krankheit, Unkraut)</div>
@@ -597,8 +606,9 @@ routes.einstellungen = () => {
     <p class="muted">In Safari öffnen, Teilen-Symbol tippen, „Zum Home-Bildschirm“ wählen. Nur so gelten Kamera-Zugriff und Zahl am Icon zuverlässig.</p></div>
   <p class="hint">${VERSION}</p>
   <p class="hint">Pflanzenerkennung: Pl@ntNet. Pflegewerte und Giftangaben sind Richtwerte und kein Ersatz für Fachrat.</p>`);
+  $('#theme').onchange = () => { s.theme = $('#theme').value; applyTheme(); save(); };
   $('#saveset').onclick = () => {
-    s.plantnetKey = $('#key').value.trim(); s.proxy = $('#proxy').value.trim(); s.winter = $('#winter').checked; save(); toast('Gespeichert');
+    s.plantnetKey = $('#key').value.trim(); s.proxy = $('#proxy').value.trim(); s.winter = $('#winter').checked; s.theme = $('#theme').value; applyTheme(); save(); toast('Gespeichert');
   };
   $('#saveai').onclick = () => { s.anthropicKey = $('#akey').value.trim(); s.aiModel = $('#amodel').value; s.erkennung = $('#aerk').value; save(); toast('Gespeichert'); };
   $('#resetuse').onclick = e => { e.preventDefault(); s.aiUsage = { calls: 0, inTok: 0, outTok: 0, usd: 0 }; save(); routes.einstellungen(); };
@@ -620,7 +630,7 @@ routes.einstellungen = () => {
     try {
       const j = JSON.parse(await f.text()); if (!j.state || !Array.isArray(j.state.plants)) throw new Error();
       if (!confirm('Vorhandene Daten auf diesem Gerät werden ersetzt. Fortfahren?')) return;
-      const keep = { erkennung: state.settings.erkennung, plantnetKey: state.settings.plantnetKey, anthropicKey: state.settings.anthropicKey, aiModel: state.settings.aiModel, aiUsage: state.settings.aiUsage };
+      const keep = { theme: state.settings.theme, erkennung: state.settings.erkennung, plantnetKey: state.settings.plantnetKey, anthropicKey: state.settings.anthropicKey, aiModel: state.settings.aiModel, aiUsage: state.settings.aiUsage };
       for (const [id, data] of Object.entries(j.photos || {})) await idbOp('readwrite', st => st.put(await0(data), id));
       state = { ...defaults(), ...j.state }; state.settings = { ...defaults().settings, ...j.state.settings, ...keep };
       save(); toast('Importiert'); go('sammlung');
@@ -678,7 +688,7 @@ document.addEventListener('click', async e => {
 /* ---------- Start ---------- */
 window.addEventListener('hashchange', route);
 (async () => {
-  load(); await loadDB();
+  load(); applyTheme(); await loadDB();
   if ('serviceWorker' in navigator) {
     const had = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) location.reload(); });

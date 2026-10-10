@@ -5,9 +5,13 @@
   --water:#007aff; --radius:12px; --blur:rgba(249,249,249,.86);
 }
 @media (prefers-color-scheme: dark){
-  :root{--bg:#000000; --card:#1c1c1e; --ink:#ffffff; --muted:#98989f; --line:rgba(84,84,88,.6); --fill:rgba(120,120,128,.24);
+  :root:not([data-theme=light]){--bg:#000000; --card:#1c1c1e; --ink:#ffffff; --muted:#98989f; --line:rgba(84,84,88,.6); --fill:rgba(120,120,128,.24);
     --green:#30d158; --green-ink:#000000; --warn:#ff9f0a; --bad:#ff453a; --ok:#30d158; --water:#0a84ff; --blur:rgba(29,29,31,.86)}
 }
+:root[data-theme=dark]{--bg:#000000; --card:#1c1c1e; --ink:#ffffff; --muted:#98989f; --line:rgba(84,84,88,.6); --fill:rgba(120,120,128,.24);
+    --green:#30d158; --green-ink:#000000; --warn:#ff9f0a; --bad:#ff453a; --ok:#30d158; --water:#0a84ff; --blur:rgba(29,29,31,.86)}
+:root[data-theme=light]{color-scheme:light}
+:root[data-theme=dark]{color-scheme:dark}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--ink);
   font:17px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
