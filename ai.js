@@ -30,6 +30,11 @@ Antworte ausschließlich mit gültigem JSON nach dem vorgegebenen Schema, ohne T
  "zweitmeinung_art": {"einschaetzung": "Was die Fotos zur Art sagen (nur wenn ein Foto dabei ist, sonst leer)", "sicherheit": "hoch|mittel|niedrig", "merkmale_zum_pruefen": ["woran man die Art selbst prüfen kann"]},
  "unsicherheiten": ["..."]
 }`,
+    art: `{
+ "kandidaten": [{"name_de": "deutscher Name", "latein": "wissenschaftlicher Name (Gattung und Art)", "sicherheit": "hoch|mittel|niedrig", "begruendung": "sichtbare Merkmale", "pruefen": "woran man es selbst prüfen kann"}],
+ "hinweis": "z. B. wenn das Foto schlecht ist, sonst leer"
+}
+Nenne höchstens 3 Kandidaten, den wahrscheinlichsten zuerst. Wenn keine Pflanze erkennbar ist, ist die Liste leer.`,
     krank: `{
  "pflanze_erkannt": "...",
  "gesamtbild": "gesund|leichte Auffälligkeiten|deutliche Probleme|nicht beurteilbar",

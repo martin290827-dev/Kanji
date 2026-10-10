@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 8 (10.10.2026)';
+const VERSION = 'Version 9 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -26,7 +26,7 @@ function toast(msg) {
 }
 
 /* ---------- Speicher ---------- */
-const defaults = () => ({ plants: [], wishlist: [], settings: { plantnetKey: '', proxy: '', winter: true, anthropicKey: '', aiModel: 'claude-sonnet-5-5', aiUsage: { calls: 0, inTok: 0, outTok: 0, usd: 0 } } });
+const defaults = () => ({ plants: [], wishlist: [], settings: { plantnetKey: '', proxy: '', winter: true, anthropicKey: '', aiModel: 'claude-sonnet-5-5', erkennung: 'beide', aiUsage: { calls: 0, inTok: 0, outTok: 0, usd: 0 } } });
 let state = defaults();
 function load() {
   try { const raw = localStorage.getItem(KEY); if (raw) state = { ...defaults(), ...JSON.parse(raw) }; }
@@ -246,9 +246,9 @@ function formView(p, fromScan) {
       formScanFile = file; formBusy = true; const out = $('#fres');
       out.innerHTML = '<p><span class="spin"></span> Erkenne …</p>';
       try {
-        formResults = await plantnetLookup(file);
+        const L = await lookupAll(file); formResults = L.items;
         out.innerHTML = formResults.length
-          ? '<p class="muted">Passenden Vorschlag antippen:</p>' + formResults.map((r, i) => `<button type="button" class="sec" style="display:block;width:100%;text-align:left;margin:6px 0" data-fpick="${i}">${esc((r.species.commonNames || [])[0] || r.species.scientificNameWithoutAuthor)}<br><span class="hint">${esc(r.species.scientificNameWithoutAuthor)} · Sicherheit ${Math.round(r.score * 100)} %</span></button>`).join('')
+          ? '<p class="muted">Passenden Vorschlag antippen:</p>' + L.note.map(n => `<p class="hint">${esc(n)}</p>`).join('') + formResults.map((r, i) => `<button type="button" class="sec" style="display:block;width:100%;text-align:left;margin:6px 0" data-fpick="${i}">${esc((r.species.commonNames || [])[0] || r.species.scientificNameWithoutAuthor)}<br><span class="hint">${esc(r.species.scientificNameWithoutAuthor)} · ${esc(r.label)}</span></button>`).join('')
             + '<p class="hint">Bei geringer Sicherheit nicht verlassen. Foto wird beim Speichern der Pflanze zugeordnet.</p>'
           : '<p class="muted">Keine Pflanze erkannt. Anderes Foto versuchen oder die Felder selbst ausfüllen.</p>';
       } catch (err) { out.innerHTML = `<div class="warnbox">${lookupErrorHTML(err)}</div>`; }
@@ -306,8 +306,8 @@ routes.scanPlant = () => {
   scanFile = null;
   const hasKey = !!state.settings.plantnetKey;
   render('Scan', `${modeTabs('pflanze')}<div class="card"><div class="name">Pflanze erkennen</div>
-    <p class="muted">Foto von Blatt, Blüte oder der ganzen Pflanze. Das Bild wird zur Erkennung an Pl@ntNet gesendet.</p>
-    ${hasKey ? '' : '<div class="warnbox">Noch kein Pl@ntNet-Schlüssel hinterlegt. <a href="#einstellungen">Jetzt unter „Mehr“ eintragen</a> (kostenlos, 500 Erkennungen pro Tag).</div>'}
+    <p class="muted">Foto von Blatt, Blüte oder der ganzen Pflanze. Das Bild geht zur Erkennung an Pl@ntNet und/oder Claude (siehe „Mehr“).</p>
+    ${hasKey || state.settings.anthropicKey ? '' : '<div class="warnbox">Noch kein Schlüssel hinterlegt. <a href="#einstellungen">Jetzt unter „Mehr“ eintragen</a> (kostenlos, 500 Erkennungen pro Tag).</div>'}
     <div class="actions">
       <div class="pick"><span class="btn">📷 Foto aufnehmen</span><input id="scancam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
       <div class="pick"><span class="btn sec">🖼 Aus Galerie</span><input id="scangal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
@@ -361,9 +361,48 @@ async function plantnetLookup(file) {
   const data = await res.json();
   return (data.results || []).slice(0, 3);
 }
+
+/* Erkennung: Pl@ntNet, Claude oder beide */
+async function claudeLookup(file) {
+  if (!state.settings.anthropicKey) { const e = new Error('Schlüssel fehlt'); e.code = 'nokey'; throw e; }
+  const blob = await shrink(file, 1024, 0.85);
+  if (!blob) throw new Error('Das Foto konnte nicht gelesen werden.');
+  const r = await AI.run('art', 'Bestimme die Pflanze auf dem Foto. Beachte: Zimmerpflanze, Gartenpflanze oder Wildpflanze in Mitteleuropa möglich.', [blob], 700);
+  const sc = { hoch: .85, mittel: .55, niedrig: .25 };
+  return ((r.data && r.data.kandidaten) || []).slice(0, 3).filter(k => k && k.latein).map(k => ({
+    src: 'claude', score: sc[k.sicherheit] || .25, label: 'Claude: Sicherheit ' + (k.sicherheit || 'niedrig'), why: k.begruendung || '', check: k.pruefen || '',
+    species: { scientificNameWithoutAuthor: String(k.latein), commonNames: k.name_de ? [String(k.name_de)] : [], family: { scientificNameWithoutAuthor: '' } }
+  }));
+}
+async function lookupAll(file) {
+  const s = state.settings;
+  let mode = s.erkennung || 'beide';
+  if (mode === 'beide' && !s.anthropicKey) mode = 'plantnet';
+  if (mode === 'beide' && !s.plantnetKey) mode = 'claude';
+  const jobs = [];
+  if (mode !== 'claude') jobs.push(plantnetLookup(file).then(r => r.map(x => ({ ...x, src: 'plantnet', label: 'Pl@ntNet: Sicherheit ' + Math.round(x.score * 100) + ' %' }))));
+  if (mode !== 'plantnet') jobs.push(claudeLookup(file));
+  const res = await Promise.allSettled(jobs);
+  const ok = res.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
+  const bad = res.filter(r => r.status === 'rejected').map(r => r.reason);
+  if (!ok.length && bad.length) throw bad[0];
+  const note = [];
+  if (bad.length) note.push('Eine Quelle ist ausgefallen: ' + (bad[0].code === 'nokey' ? 'Schlüssel fehlt.' : String(bad[0].message || bad[0]).slice(0, 160)));
+  const pn = ok.find(x => x.src === 'plantnet'), cl = ok.find(x => x.src === 'claude');
+  if (pn && cl) {
+    const g = x => x.species.scientificNameWithoutAuthor.toLowerCase().split(' ');
+    const [a, b] = [g(pn), g(cl)];
+    note.push(a[0] === b[0] && a[1] === b[1] ? 'Beide Quellen nennen dieselbe Art. Das erhöht die Verlässlichkeit.'
+      : a[0] === b[0] ? 'Beide Quellen nennen dieselbe Gattung, aber verschiedene Arten. Merkmale prüfen.'
+      : 'Die Quellen widersprechen sich. Nicht verlassen, Merkmale prüfen.');
+  }
+  return { items: ok, note };
+}
+function srcBadge(x) { return `<span class="badge ${x.src === 'claude' ? '' : (x.score > .6 ? 'ok' : 'due')}">${esc(x.label || '')}</span>`; }
 function lookupErrorHTML(e) {
   if (e.code === 'nokey') return 'Für die Erkennung fehlt der Pl@ntNet-Schlüssel. <a href="#einstellungen">Unter „Mehr“ eintragen</a>, danach das Foto erneut wählen.';
   if (e.name === 'AbortError') return 'Zeitüberschreitung nach 30 Sekunden. Netz prüfen und noch einmal versuchen.';
+  if (e.code === 'nokey2') return esc(e.message);
   if (e instanceof TypeError) return 'Verbindung zu Pl@ntNet fehlgeschlagen (' + esc(e.message) + '). Kein Netz, oder der Browser blockiert die Anfrage. Wenn es dauerhaft passiert, melde dich bei Claude mit dieser Meldung.';
   return esc(e.message);
 }
@@ -374,18 +413,18 @@ async function identify() {
   scanBusy = true;
   out.innerHTML = '<p><span class="spin"></span> Erkenne …</p>';
   try {
-    const results = await plantnetLookup(scanFile);
+    const L = await lookupAll(scanFile); const results = L.items;
     if (!results.length) { out.innerHTML = '<p class="muted">Keine Pflanze erkannt. Anderes Foto versuchen (Blatt oder Blüte, gutes Licht).</p>'; return; }
     window.__scanResults = results;
-    out.innerHTML = results.map((r, i) => {
+    out.innerHTML = L.note.map(n => `<div class="warnbox">${esc(n)}</div>`).join('') + results.map((r, i) => {
       const sci = r.species.scientificNameWithoutAuthor, common = (r.species.commonNames || [])[0] || '';
       const m = dbMatch(sci);
       return `<div class="card"><div class="name">${esc(common || sci)}</div><div class="muted">${esc(sci)} · ${esc(r.species.family?.scientificNameWithoutAuthor || '')}</div>
-      <span class="badge ${r.score > .6 ? 'ok' : 'due'}">Sicherheit ${Math.round(r.score * 100)} %</span>
+      ${srcBadge(r)}${r.why ? `<p class="hint">${esc(r.why)}${r.check ? ' Prüfen: ' + esc(r.check) : ''}</p>` : ''}
       ${m ? `<span class="badge ${toxClass(m.entry.katze)}">Katze: ${esc(m.entry.katze)}</span><span class="badge ${toxClass(m.entry.hund)}">Hund: ${esc(m.entry.hund)}</span>${m.exact ? '' : '<p class="hint">Giftangabe gilt für verwandte Art derselben Gattung, nur Anhaltspunkt.</p>'}`
         : '<p class="hint">Keine Giftigkeits-Daten in der App.</p>'}
       <div class="actions"><button class="small" data-add="${i}">Zur Sammlung</button><button class="small sec" data-wish="${i}">Wunschliste</button></div></div>`;
-    }).join('') + '<p class="hint">Erkennung per Pl@ntNet (https://my.plantnet.org). Bei geringer Sicherheit nicht verlassen, besonders bei Giftigkeit.</p>';
+    }).join('') + '<p class="hint">Erkennung per Pl@ntNet (https://my.plantnet.org) und/oder Claude. Bei geringer Sicherheit nicht verlassen, besonders bei Giftigkeit.</p>';
   } catch (e) {
     out.innerHTML = `<div class="warnbox">${lookupErrorHTML(e)}</div>`;
   } finally { scanBusy = false; }
@@ -506,6 +545,7 @@ routes.einstellungen = () => {
   <div class="card"><div class="name">Claude-Schlüssel (für Infos, Krankheit, Unkraut)</div>
     <p class="muted">Eigener API-Schlüssel von platform.claude.com. Bleibt nur auf diesem Gerät. Jede Auswertung kostet Geld. Setze in der Console unter Billing ein niedriges Ausgabenlimit.</p>
     <input id="akey" value="${esc(s.anthropicKey || '')}" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off">
+    <label>Pflanzenerkennung per Foto</label><select id="aerk">${[['beide','Beide (Pl@ntNet und Claude, ca. 1 Cent)'],['plantnet','Nur Pl@ntNet (gratis)'],['claude','Nur Claude']].map(([k, v]) => `<option value="${k}" ${(s.erkennung || 'beide') === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
     <label>Modell</label><select id="amodel">${Object.entries(AI.MODELS).map(([k, v]) => `<option value="${k}" ${(s.aiModel || AI.DEFAULT_MODEL) === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
     <div class="actions"><button id="saveai">Speichern</button><button id="testai" class="sec">Verbindung testen</button></div>
     <div id="aitest"></div>
@@ -521,10 +561,10 @@ routes.einstellungen = () => {
   $('#saveset').onclick = () => {
     s.plantnetKey = $('#key').value.trim(); s.proxy = $('#proxy').value.trim(); s.winter = $('#winter').checked; save(); toast('Gespeichert');
   };
-  $('#saveai').onclick = () => { s.anthropicKey = $('#akey').value.trim(); s.aiModel = $('#amodel').value; save(); toast('Gespeichert'); };
+  $('#saveai').onclick = () => { s.anthropicKey = $('#akey').value.trim(); s.aiModel = $('#amodel').value; s.erkennung = $('#aerk').value; save(); toast('Gespeichert'); };
   $('#resetuse').onclick = e => { e.preventDefault(); s.aiUsage = { calls: 0, inTok: 0, outTok: 0, usd: 0 }; save(); routes.einstellungen(); };
   $('#testai').onclick = async () => {
-    s.anthropicKey = $('#akey').value.trim(); s.aiModel = $('#amodel').value; save();
+    s.anthropicKey = $('#akey').value.trim(); s.aiModel = $('#amodel').value; s.erkennung = $('#aerk').value; save();
     const out = $('#aitest'); out.innerHTML = '<p><span class="spin"></span> Teste …</p>';
     try { const r = await AI.ask({ text: 'Antworte nur mit dem Wort OK.', maxTokens: 10, system: 'Antworte nur mit dem Wort OK.' }); out.innerHTML = `<p class="badge ok">Verbindung steht (${esc(r.model)})</p>`; }
     catch (e) { out.innerHTML = `<div class="warnbox">${aiErrorHTML(e)}</div>`; }
@@ -541,7 +581,7 @@ routes.einstellungen = () => {
     try {
       const j = JSON.parse(await f.text()); if (!j.state || !Array.isArray(j.state.plants)) throw new Error();
       if (!confirm('Vorhandene Daten auf diesem Gerät werden ersetzt. Fortfahren?')) return;
-      const keep = { plantnetKey: state.settings.plantnetKey, anthropicKey: state.settings.anthropicKey, aiModel: state.settings.aiModel, aiUsage: state.settings.aiUsage };
+      const keep = { erkennung: state.settings.erkennung, plantnetKey: state.settings.plantnetKey, anthropicKey: state.settings.anthropicKey, aiModel: state.settings.aiModel, aiUsage: state.settings.aiUsage };
       for (const [id, data] of Object.entries(j.photos || {})) await idbOp('readwrite', st => st.put(await0(data), id));
       state = { ...defaults(), ...j.state }; state.settings = { ...defaults().settings, ...j.state.settings, ...keep };
       save(); toast('Importiert'); go('sammlung');
