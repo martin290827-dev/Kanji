@@ -109,3 +109,8 @@ h2.sect{font:700 22px/1.2 -apple-system,sans-serif;text-transform:none;letter-sp
 .sw span::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,.3);transition:transform .2s}
 .sw input:checked + span{background:var(--green)}
 .sw input:checked + span::after{transform:translateX(20px)}
+
+.ph{position:relative;padding:0;border:2px solid transparent;background:none;border-radius:12px;overflow:hidden;display:block}
+.ph.sel{border-color:var(--green)}
+.ph img{width:84px;height:84px;object-fit:cover;display:block;border-radius:10px;background:var(--fill)}
+.ph .cov{position:absolute;left:4px;bottom:4px;font-size:10px;font-weight:600;background:var(--green);color:var(--green-ink);padding:1px 6px;border-radius:99px}

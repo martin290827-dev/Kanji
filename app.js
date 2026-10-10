@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 18 (10.10.2026)';
+const VERSION = 'Version 19 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -32,7 +32,10 @@ function load() {
   try { const raw = localStorage.getItem(KEY); if (raw) state = { ...defaults(), ...JSON.parse(raw) }; }
   catch (e) { console.warn('Laden fehlgeschlagen', e); }
   state.settings = { ...defaults().settings, ...state.settings };
+  normPhotos();
 }
+function normPhotos() { for (const p of state.plants || []) { if (!Array.isArray(p.photos)) p.photos = p.photo ? [p.photo] : []; if (p.photo && !p.photos.includes(p.photo)) p.photos.unshift(p.photo); if (!p.photo && p.photos.length) p.photo = p.photos[0]; } }
+const photosOf = p => (p.photos && p.photos.length ? p.photos : (p.photo ? [p.photo] : []));
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
   catch (e) { toast('Speichern fehlgeschlagen (Speicher voll?)'); }
@@ -191,6 +194,23 @@ routes.sammlung = () => {
   render(`Sammlung (${list.length})`, h);
 };
 
+
+/* ---------- Fotos einer Pflanze ---------- */
+let selPhoto = null;
+function galleryCard(p) {
+  const ph = photosOf(p);
+  if (selPhoto && !ph.includes(selPhoto)) selPhoto = null;
+  let h = `<div class="card"><div class="cardhead" style="font-size:19px">Fotos (${ph.length})</div>`;
+  if (ph.length) h += `<div class="thumbs">${ph.map(id => `<button type="button" class="ph ${id === selPhoto ? 'sel' : ''}" data-phsel="${id}" aria-label="Foto wählen"><img src="" data-photo="${esc(id)}" alt="">${id === p.photo ? '<span class="cov">Titelbild</span>' : ''}</button>`).join('')}</div>`;
+  else h += '<p class="muted">Noch kein Foto.</p>';
+  if (selPhoto) h += `<div class="kv"><img class="big" data-photo="${esc(selPhoto)}" alt="" style="max-height:340px">
+    <div class="actions">${selPhoto !== p.photo ? `<button class="small" data-phcover="${p.id}">Als Titelbild</button>` : '<span class="badge ok">Ist das Titelbild</span>'}
+    <button class="small danger" data-phdel="${p.id}">Löschen</button><button class="small sec" data-phsel="">Schließen</button></div></div>`;
+  h += `<div class="actions"><div class="pick"><span class="btn small">📷 Foto aufnehmen</span><input data-phadd="${p.id}" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
+    <div class="pick"><span class="btn sec small">🖼 Aus Galerie</span><input data-phadd="${p.id}" type="file" accept="image/*" multiple aria-label="Fotos aus Galerie wählen"></div></div></div>`;
+  return h;
+}
+
 /* ---------- Detail ---------- */
 routes.pflanze = ([id]) => {
   const p = state.plants.find(x => x.id === id); if (!p) return go('sammlung');
@@ -209,6 +229,7 @@ routes.pflanze = ([id]) => {
     ${p.notes ? `<p>${esc(p.notes).replace(/\n/g, '<br>')}</p>` : ''}</div>`;
   if (e && p.dbApprox) h += `<div class="warnbox">Pflege- und Giftangaben stammen von einer verwandten Art (${esc(e.name)}). Nur ein Anhaltspunkt, bitte prüfen.</div>`;
   h += mergedCard(p, e);
+  h += galleryCard(p);
   const log = (p.log || []).slice(-8).reverse();
   if (log.length) h += `<div class="card"><div class="name">Verlauf</div>${log.map(l => `<div class="muted">${fmtDE(l.d)} · ${l.t === 'water' ? 'gegossen' : 'gedüngt'}</div>`).join('')}</div>`;
   h += `<div class="actions"><a class="btn sec" href="#bearbeiten/${p.id}">Bearbeiten</a><button class="danger" data-del="${p.id}">Löschen</button></div>`;
@@ -238,7 +259,7 @@ function formView(p, fromScan) {
     <label>Gießen alle (Tage)</label><input name="waterDays" type="number" min="1" max="90" value="${esc(p.waterDays ?? 7)}">
     <input name="fertDays" type="hidden" value="${esc(p.fertDays ?? '')}"><input name="lastFert" type="hidden" value="${esc(p.lastFert || '')}">
     <label>Notizen</label><textarea name="notes">${esc(p.notes || '')}</textarea>
-    <label>Foto</label>${p.photo ? `<img class="thumb" data-photo="${esc(p.photo)}" alt="" style="margin-bottom:6px">` : ''}
+    <label>${isNew ? 'Foto' : 'Neues Titelbild (optional, weitere Fotos auf der Pflanzenseite)'}</label>${p.photo ? `<img class="thumb" data-photo="${esc(p.photo)}" alt="" style="margin-bottom:6px">` : ''}
     <input name="photo" type="file" accept="image/*">
     <div class="actions"><button type="submit">Speichern</button><a class="btn sec" href="#${isNew ? 'sammlung' : 'pflanze/' + p.id}">Abbrechen</a></div>
   </form>`);
@@ -291,11 +312,11 @@ function formView(p, fromScan) {
     rec.dbApprox = origApprox && rec.dbId === origDbId;
     const file = fd.get('photo');
     if (file && file.size) {
-      try { const b = await shrink(file, 640, 0.8); if (rec.photo) await delPhoto(rec.photo); rec.photo = await putPhoto(b); }
+      try { const b = await shrink(file, 900, 0.8); const nid = await putPhoto(b); rec.photos = [...photosOf(rec), nid]; rec.photo = nid; }
       catch (e) { toast('Foto konnte nicht gespeichert werden'); }
     } else if (formScanFile) {
-      try { rec.photo = await putPhoto(await shrink(formScanFile, 640, 0.8)); } catch (e) { toast('Foto konnte nicht gespeichert werden'); }
-    } else if (fromScan && fromScan.photo) rec.photo = fromScan.photo;
+      try { rec.photo = await putPhoto(await shrink(formScanFile, 900, 0.8)); rec.photos = [rec.photo]; } catch (e) { toast('Foto konnte nicht gespeichert werden'); }
+    } else if (fromScan && fromScan.photo) { rec.photo = fromScan.photo; rec.photos = [fromScan.photo]; }
     if (isNew) state.plants.push(rec);
     save(); toast('Gespeichert'); go('pflanze/' + rec.id);
   });
@@ -631,7 +652,8 @@ routes.einstellungen = () => {
     <a href="#einstellungen" id="resetuse">Zähler zurücksetzen</a></p></div>
   <div class="card"><div class="name">Backup</div>
     <p class="muted">Daten liegen nur auf diesem Gerät. iOS kann Browserdaten löschen, wenn die App lange nicht genutzt wird. Exportiere regelmäßig.</p>
-    <div class="actions"><button id="exp" class="sec">Exportieren</button><label class="btn sec" style="margin:0">Importieren<input id="imp" type="file" accept="application/json" hidden></label></div></div>
+    <div class="actions"><button id="exp" class="sec">Exportieren</button><div class="pick"><span class="btn sec">Importieren</span><input id="imp" type="file" accept="application/json,.json" aria-label="Backup importieren"></div></div>
+    <p class="hint">Tipp: Beim Exportieren öffnet sich das Teilen-Menü. Wähle „In Dateien sichern“ und speichere in iCloud Drive, am besten in einem Ordner „Kanji-Backup“. Beim Importieren wählst du diese Datei wieder aus.</p></div>
   <div class="card"><div class="name">Auf den Home-Bildschirm</div>
     <p class="muted">In Safari öffnen, Teilen-Symbol tippen, „Zum Home-Bildschirm“ wählen. Nur so gelten Kamera-Zugriff und Zahl am Icon zuverlässig.</p></div>
   <p class="hint">${VERSION}</p>
@@ -650,10 +672,15 @@ routes.einstellungen = () => {
   };
   $('#exp').onclick = async () => {
     const photos = {};
-    for (const p of state.plants) if (p.photo) { const b = await getPhoto(p.photo); if (b) photos[p.photo] = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); }
+    for (const p of state.plants) for (const ph of photosOf(p)) { const b = await getPhoto(ph); if (b) photos[ph] = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); }
     const copy = { ...state, settings: { ...state.settings, plantnetKey: '', anthropicKey: '' } };
     const blob = new Blob([JSON.stringify({ version: 1, state: copy, photos })], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `pflanzen-backup-${today()}.json`; a.click();
+    const name = `kanji-backup-${today()}.json`;
+    try {
+      const file = new File([blob], name, { type: 'application/json' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+    } catch (err) { if (err && err.name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
   };
   $('#imp').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
@@ -662,7 +689,7 @@ routes.einstellungen = () => {
       if (!confirm('Vorhandene Daten auf diesem Gerät werden ersetzt. Fortfahren?')) return;
       const keep = { theme: state.settings.theme, erkennung: state.settings.erkennung, plantnetKey: state.settings.plantnetKey, anthropicKey: state.settings.anthropicKey, aiModel: state.settings.aiModel, aiUsage: state.settings.aiUsage };
       for (const [id, data] of Object.entries(j.photos || {})) await idbOp('readwrite', st => st.put(await0(data), id));
-      state = { ...defaults(), ...j.state }; state.settings = { ...defaults().settings, ...j.state.settings, ...keep };
+      state = { ...defaults(), ...j.state }; state.settings = { ...defaults().settings, ...j.state.settings, ...keep }; normPhotos();
       save(); toast('Importiert'); go('sammlung');
     } catch { toast('Datei nicht lesbar'); }
   };
@@ -677,6 +704,14 @@ function await0(dataUrl) { // dataURL -> Blob (synchron)
 document.addEventListener('change', e => {
   const t = e.target; if (!t.dataset) return;
   const D = t.dataset, P = id => state.plants.find(x => x.id === id);
+  if (D.phadd) {
+    const p = P(D.phadd); const files = [...(t.files || [])]; t.value = ''; if (!p || !files.length) return;
+    (async () => {
+      let n = 0; p.photos = photosOf(p).slice();
+      for (const f of files) { try { const id = await putPhoto(await shrink(f, 900, 0.8)); p.photos.push(id); if (!p.photo) p.photo = id; n++; } catch { toast('Ein Foto konnte nicht gespeichert werden'); } }
+      if (n) { save(); toast(n === 1 ? 'Foto hinzugefügt' : n + ' Fotos hinzugefügt'); route(); }
+    })(); return;
+  }
   if (D.roomsel) {
     const p = P(D.roomsel); if (!p) return;
     if (t.value === '__neu') { $('#roomnewbox').style.display = 'flex'; $('#roomnew').focus(); return; }
@@ -707,7 +742,14 @@ document.addEventListener('click', async e => {
   else if (D.fert) { const p = state.plants.find(x => x.id === D.fert); p.lastFert = today(); (p.log = p.log || []).push({ t: 'fert', d: today() }); p.log = p.log.slice(-40); save(); toast('Gedüngt'); route(); }
   else if (D.del) {
     const p = state.plants.find(x => x.id === D.del);
-    if (confirm(`„${p.name}“ wirklich löschen?`)) { if (p.photo) await delPhoto(p.photo); state.plants = state.plants.filter(x => x !== p); save(); go('sammlung'); }
+    if (confirm(`„${p.name}“ wirklich löschen?`)) { for (const ph of photosOf(p)) await delPhoto(ph); state.plants = state.plants.filter(x => x !== p); save(); go('sammlung'); }
+  }
+  else if (D.phsel !== undefined) { selPhoto = D.phsel || null; route(); }
+  else if (D.phcover) { const p = state.plants.find(x => x.id === D.phcover); if (p && selPhoto) { p.photo = selPhoto; save(); toast('Titelbild geändert'); route(); } }
+  else if (D.phdel) {
+    const p = state.plants.find(x => x.id === D.phdel); if (!p || !selPhoto) return;
+    if (!confirm('Dieses Foto löschen?')) return;
+    await delPhoto(selPhoto); p.photos = photosOf(p).filter(x => x !== selPhoto); if (p.photo === selPhoto) p.photo = p.photos[0] || ''; selPhoto = null; save(); toast('Foto gelöscht'); route();
   }
   else if (D.roomnew) {
     const p = state.plants.find(x => x.id === D.roomnew), v = ($('#roomnew').value || '').trim(); if (!p || !v) return;
