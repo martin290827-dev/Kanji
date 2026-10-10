@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 15 (10.10.2026)';
+const VERSION = 'Version 16 (10.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -146,7 +146,7 @@ function applyTheme() {
   const t = (state.settings && state.settings.theme) || 'auto', r = document.documentElement;
   if (t === 'light' || t === 'dark') r.setAttribute('data-theme', t); else r.removeAttribute('data-theme');
   const dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = dark ? '#000000' : '#f2f2f7';
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = dark ? '#1b1b1d' : '#f4f4f1';
 }
 applyTheme();
 
@@ -155,7 +155,8 @@ const routes = {};
 function route() {
   const parts = (location.hash.slice(1) || 'sammlung').split('/');
   const name = parts[0];
-  document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === (['pflanze', 'neu', 'bearbeiten'].includes(name) ? 'sammlung' : name)));
+  const tabKey = ['pflanze', 'neu', 'bearbeiten'].includes(name) ? 'sammlung' : name === 'scan' ? (parts[1] === 'krank' ? 'diagnose' : 'scan') : ['einstellungen', 'giftig', 'mehr'].includes(name) ? 'mehr' : name;
+  document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tabKey));
   (routes[name] || routes.sammlung)(parts.slice(1));
   window.scrollTo(0, 0);
 }
@@ -306,8 +307,8 @@ routes.scanPlant = () => {
   scanFile = null;
   const hasKey = !!state.settings.plantnetKey;
   render('Scan', `${modeTabs('pflanze')}<div class="card"><div class="name">Pflanze erkennen</div>
-    <p class="muted">Foto von Blatt, Blüte oder der ganzen Pflanze. Das Bild geht zur Erkennung an Pl@ntNet und/oder Claude (siehe „Mehr“).</p>
-    ${hasKey || state.settings.anthropicKey ? '' : '<div class="warnbox">Noch kein Schlüssel hinterlegt. <a href="#einstellungen">Jetzt unter „Mehr“ eintragen</a> (kostenlos, 500 Erkennungen pro Tag).</div>'}
+    <p class="muted">Foto von Blatt, Blüte oder der ganzen Pflanze. Das Bild geht zur Erkennung an Pl@ntNet und/oder Claude (siehe „Mehr → Einstellungen“).</p>
+    ${hasKey || state.settings.anthropicKey ? '' : '<div class="warnbox">Noch kein Schlüssel hinterlegt. <a href="#einstellungen">Jetzt unter „Mehr → Einstellungen“ eintragen</a> (kostenlos, 500 Erkennungen pro Tag).</div>'}
     <div class="actions">
       <div class="pick"><span class="btn">📷 Foto aufnehmen</span><input id="scancam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
       <div class="pick"><span class="btn sec">🖼 Aus Galerie</span><input id="scangal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
@@ -315,9 +316,7 @@ routes.scanPlant = () => {
     <img id="scanprev" class="big" style="display:none;margin-top:6px" alt="">
     <div class="actions"><button id="scango" type="button" class="sec">Erkennen</button></div>
     <div id="scanres"></div><p class="hint">${VERSION}</p></div>
-  <div class="card"><div class="name">Giftig oder nicht? Nachschlagen</div>
-    <input id="q" placeholder="z. B. Monstera, Lilie, Basilikum" autocomplete="off">
-    <div id="qres"></div></div>`);
+`);
   const pick = e => {
     const f = e.target.files && e.target.files[0]; e.target.value = '';
     if (!f) return;
@@ -329,6 +328,12 @@ routes.scanPlant = () => {
   $('#scancam').addEventListener('change', pick);
   $('#scangal').addEventListener('change', pick);
   $('#scango').addEventListener('click', identify);
+};
+
+routes.giftig = () => {
+  render('Giftig-Check', `<div class="card"><div class="name">Giftig oder nicht?</div>
+    <input id="q" placeholder="z. B. Monstera, Lilie, Basilikum" autocomplete="off">
+    <div id="qres"></div></div>`);
   $('#q').addEventListener('input', e => {
     const r = dbSearch(e.target.value);
     $('#qres').innerHTML = !e.target.value.trim() ? '' : (r.length ? r.slice(0, 8).map(p => `<div class="card"><div class="name">${esc(p.name)}</div><div class="muted">${esc(p.latin)}</div>
@@ -400,7 +405,7 @@ async function lookupAll(file) {
 }
 function srcBadge(x) { return `<span class="badge ${x.src === 'claude' ? '' : (x.score > .6 ? 'ok' : 'due')}">${esc(x.label || '')}</span>`; }
 function lookupErrorHTML(e) {
-  if (e.code === 'nokey') return 'Für die Erkennung fehlt der Pl@ntNet-Schlüssel. <a href="#einstellungen">Unter „Mehr“ eintragen</a>, danach das Foto erneut wählen.';
+  if (e.code === 'nokey') return 'Für die Erkennung fehlt der Pl@ntNet-Schlüssel. <a href="#einstellungen">Unter „Mehr → Einstellungen“ eintragen</a>, danach das Foto erneut wählen.';
   if (e.name === 'AbortError') return 'Zeitüberschreitung nach 30 Sekunden. Netz prüfen und noch einmal versuchen.';
   if (e.code === 'nokey2') return esc(e.message);
   if (e instanceof TypeError) return 'Verbindung zu Pl@ntNet fehlgeschlagen (' + esc(e.message) + '). Kein Netz, oder der Browser blockiert die Anfrage. Wenn es dauerhaft passiert, melde dich bei Claude mit dieser Meldung.';
@@ -438,7 +443,7 @@ const modeTabs = mode => `<div class="seg">
   <a href="#scan/unkraut" class="${mode === 'unkraut' ? 'on' : ''}">Unkraut</a></div>`;
 const spinner = '<p><span class="spin"></span> Claude wertet aus … (bis zu 30 Sekunden)</p>';
 function aiErrorHTML(e) {
-  if (e.code === 'nokey') return 'Für diese Funktion fehlt der Claude-Schlüssel. <a href="#einstellungen">Unter „Mehr“ eintragen</a>.';
+  if (e.code === 'nokey') return 'Für diese Funktion fehlt der Claude-Schlüssel. <a href="#einstellungen">Unter „Mehr → Einstellungen“ eintragen</a>.';
   if (e.name === 'AbortError') return 'Zeitüberschreitung nach 90 Sekunden. Netz prüfen und noch einmal versuchen.';
   if (e instanceof TypeError) return 'Verbindung zu Claude fehlgeschlagen (' + esc(e.message) + '). Kein Netz, oder der Browser blockiert die Anfrage.';
   return esc(e.message);
@@ -455,7 +460,7 @@ function aiScanView(mode, pid) {
   const hasKey = !!state.settings.anthropicKey;
   render('Scan', `${modeTabs(mode)}<div class="card"><div class="name">${health ? 'Pflanzenkrankheit beurteilen' : 'Unkraut bestimmen'}</div>
     <p class="muted">${health ? 'Foto von kranken Blättern, Stielen oder der ganzen Pflanze. Bis zu 3 Fotos (zum Beispiel nah und weit) verbessern die Einschätzung.' : 'Foto vom Unkraut im Beet oder Rasen. Ein Foto von Blatt und Blüte hilft. Bis zu 3 Fotos.'} Die Fotos gehen zur Auswertung an Claude (Anthropic).</p>
-    ${hasKey ? '' : '<div class="warnbox">Noch kein Claude-Schlüssel hinterlegt. <a href="#einstellungen">Unter „Mehr“ eintragen</a>.</div>'}
+    ${hasKey ? '' : '<div class="warnbox">Noch kein Claude-Schlüssel hinterlegt. <a href="#einstellungen">Unter „Mehr → Einstellungen“ eintragen</a>.</div>'}
     ${plant ? `<p>Pflanze: <b>${esc(plant.name)}</b></p>` : (health ? '<label>Welche Pflanze? (optional)</label><input id="aiplant" autocomplete="off">' : '<label>Wo wächst es? (optional)</label><input id="aiplace" placeholder="z. B. Beet, Rasen, Gehweg" autocomplete="off">')}
     <label>${health ? 'Was fällt dir auf? (optional)' : 'Weitere Hinweise (optional)'}</label><textarea id="ainote"></textarea>
     <div class="actions">
@@ -579,10 +584,33 @@ routes.wunsch = () => {
   });
 };
 
+
+/* ---------- Mehr: Werkzeuge ---------- */
+const ICO = {
+  erkennen: ['#2e9e6a', '<path d="M24 35V21M24 21c0-5 4-8 9-8 0 5-4 8-9 8zM24 27c0-4-3-6-8-6 0 4 3 6 8 6z"/>'],
+  diagnose: ['#f0a030', '<path d="M24 16v16M16 24h16"/>'],
+  unkraut: ['#5aae3c', '<path d="M24 35c0-6-1-12-6-17M24 35c0-8 1-14 8-19M24 35c-1-5-4-9-10-10"/>'],
+  giftig: ['#e0573f', '<path d="M24 15v11M24 32v.5"/>'],
+  wunsch: ['#e0648b', '<path d="M24 34s-9-5.500-9-12a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6.500-9 12-9 12z"/>'],
+  einst: ['#7c8591', '<circle cx="24" cy="24" r="4"/><path d="M24 14v4M24 30v4M14 24h4M30 24h4M17 17l3 3M28 28l3 3M31 17l-3 3M20 28l-3 3"/>']
+};
+const ico = k => `<svg viewBox="0 0 48 48" width="44" height="44" aria-hidden="true"><rect width="48" height="48" rx="12" fill="${ICO[k][0]}"/><g fill="none" stroke="#fff" stroke-width="2.600" stroke-linecap="round" stroke-linejoin="round">${ICO[k][1]}</g></svg>`;
+routes.mehr = () => {
+  const tile = (href, k, label) => `<a class="tile" href="${href}">${ico(k)}<span>${label}</span></a>`;
+  const big = (href, k, label, sub) => `<a class="tile big" href="${href}">${ico(k)}<b>${label}</b><span class="muted">${sub}</span></a>`;
+  render('Mehr', `<h2 class="sect">Werkzeuge zur Pflege</h2>
+    <div class="tiles">${tile('#scan', 'erkennen', 'Pflanze erkennen')}${tile('#scan/krank', 'diagnose', 'Diagnose')}${tile('#scan/unkraut', 'unkraut', 'Unkraut-Hilfe')}</div>
+    <h2 class="sect">Nachschlagen</h2>
+    <div class="tiles two">${big('#giftig', 'giftig', 'Giftig-Check', 'Katze, Hund, Mensch')}${big('#wunsch', 'wunsch', 'Wunschliste', 'Pflanzen merken')}</div>
+    <h2 class="sect">App</h2>
+    <div class="tiles two">${big('#einstellungen', 'einst', 'Einstellungen', 'Schlüssel, Modus, Backup')}</div>
+    <p class="hint" style="margin-top:18px">${VERSION}</p>`);
+};
+
 /* ---------- Einstellungen ---------- */
 routes.einstellungen = () => {
   const s = state.settings;
-  render('Mehr', `<div class="card"><div class="name">Pl@ntNet-Schlüssel</div>
+  render('Einstellungen', `<div class="card"><div class="name">Pl@ntNet-Schlüssel</div>
     <p class="muted">Kostenlos auf my.plantnet.org (Konto anlegen, API-Schlüssel kopieren). Der Schlüssel bleibt nur auf diesem Gerät.</p>
     <input id="key" value="${esc(s.plantnetKey)}" placeholder="API-Schlüssel" autocomplete="off" autocapitalize="off">
     <label>Proxy-Adresse (optional, nur falls die direkte Anfrage blockiert wird)</label>

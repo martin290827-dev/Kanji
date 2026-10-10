@@ -1,15 +1,15 @@
 /* Kanji – Gestaltung nach Apple Human Interface Guidelines (iOS Look) */
 :root{
-  --bg:#f2f2f7; --card:#ffffff; --ink:#000000; --muted:#6c6c70; --line:rgba(60,60,67,.18); --fill:rgba(120,120,128,.12);
-  --green:#1f8a3b; --green-ink:#ffffff; --warn:#c75a00; --bad:#d70015; --ok:#248a3d;
-  --water:#007aff; --radius:12px; --blur:rgba(249,249,249,.86);
+  --bg:#f4f4f1; --card:#ffffff; --ink:#000000; --muted:#6c6c70; --line:rgba(60,60,67,.18); --fill:rgba(120,120,128,.12);
+  --green:#2e9e6a; --green-ink:#ffffff; --warn:#c75a00; --bad:#d70015; --ok:#248a3d;
+  --water:#007aff; --radius:18px; --blur:rgba(249,249,249,.86);
 }
 @media (prefers-color-scheme: dark){
-  :root:not([data-theme=light]){--bg:#000000; --card:#1c1c1e; --ink:#ffffff; --muted:#98989f; --line:rgba(84,84,88,.6); --fill:rgba(120,120,128,.24);
-    --green:#30d158; --green-ink:#000000; --warn:#ff9f0a; --bad:#ff453a; --ok:#30d158; --water:#0a84ff; --blur:rgba(29,29,31,.86)}
+  :root:not([data-theme=light]){--bg:#1b1b1d; --card:#2a2a2c; --ink:#ffffff; --muted:#98989f; --line:rgba(84,84,88,.6); --fill:rgba(120,120,128,.24);
+    --green:#5cbf8b; --green-ink:#10281c; --warn:#ff9f0a; --bad:#ff453a; --ok:#30d158; --water:#0a84ff; --blur:rgba(27,27,29,.86)}
 }
-:root[data-theme=dark]{--bg:#000000; --card:#1c1c1e; --ink:#ffffff; --muted:#98989f; --line:rgba(84,84,88,.6); --fill:rgba(120,120,128,.24);
-    --green:#30d158; --green-ink:#000000; --warn:#ff9f0a; --bad:#ff453a; --ok:#30d158; --water:#0a84ff; --blur:rgba(29,29,31,.86)}
+:root[data-theme=dark]{--bg:#1b1b1d; --card:#2a2a2c; --ink:#ffffff; --muted:#98989f; --line:rgba(84,84,88,.6); --fill:rgba(120,120,128,.24);
+    --green:#5cbf8b; --green-ink:#10281c; --warn:#ff9f0a; --bad:#ff453a; --ok:#30d158; --water:#0a84ff; --blur:rgba(27,27,29,.86)}
 :root[data-theme=light]{color-scheme:light}
 :root[data-theme=dark]{color-scheme:dark}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -85,3 +85,19 @@ ul{margin:4px 0 4px 20px;padding:0}
 .kv .v{font-size:17px}
 .kv .src{font-size:13px;color:var(--muted);margin-top:2px}
 .cardhead{font:700 22px/1.2 -apple-system,sans-serif;margin-bottom:4px}
+
+/* Kachel-Raster (Mehr) und Kamera-Taste in der Leiste */
+h2.sect{font:700 22px/1.2 -apple-system,sans-serif;text-transform:none;letter-spacing:0;color:var(--ink);margin:24px 2px 12px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.tiles.two{grid-template-columns:1fr 1fr}
+.tile{background:var(--card);border-radius:var(--radius);padding:16px 6px 14px;text-align:center;color:var(--ink);text-decoration:none;font-size:15px;min-height:112px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.tile:active{opacity:.6}
+.tile.big{align-items:flex-start;text-align:left;padding:16px 18px;min-height:132px;gap:6px}
+.tile.big b{font-size:19px;margin-top:6px}
+.tile.big .muted{font-size:14px}
+.tabs{background:var(--card);-webkit-backdrop-filter:none;backdrop-filter:none;border-top:0;overflow:visible;padding-top:4px}
+.tabs a.cam{position:relative;color:var(--muted)}
+.tabs a.cam .camb{display:flex;align-items:center;justify-content:center;width:62px;height:62px;border-radius:50%;background:var(--green);color:var(--green-ink);
+  margin:-34px auto 4px;border:6px solid var(--bg);box-sizing:content-box;width:56px;height:56px}
+.tabs a.cam .camb svg{width:28px;height:28px;margin:0;stroke:var(--green-ink);stroke-width:1.9}
+.tabs a.cam.on{color:var(--green)}
