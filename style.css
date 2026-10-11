@@ -170,3 +170,20 @@ details.hrow summary::-webkit-details-marker{display:none}
 .hmain{flex:1;min-width:0;display:flex;flex-direction:column}
 .hmain .sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hbody{padding:0 16px 14px}
+
+/* Raum-Kacheln */
+.rtiles{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+.rtile{position:relative;display:block;background:var(--card);border-radius:var(--radius);padding:10px;text-decoration:none;color:var(--ink)}
+.rtile:active{opacity:.6}
+.rcov{display:grid;gap:3px;aspect-ratio:4/3;border-radius:12px;overflow:hidden;background:var(--fill);margin-bottom:10px}
+.rcov.n0{place-items:center;color:var(--muted)}
+.rcov.n1{grid-template-columns:1fr}
+.rcov.n2{grid-template-columns:1fr 1fr}
+.rcov.n3,.rcov.n4{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
+.rcov.n3 img:first-child{grid-row:span 2}
+.rcov img{width:100%;height:100%;object-fit:cover;display:block}
+.rleaf svg{width:34px;height:34px}
+.rname{font-weight:600;font-size:17px;padding:0 4px}
+.rcount{font-size:13px;color:var(--muted);padding:0 4px 4px}
+.rdue{position:absolute;top:16px;right:16px;min-width:22px;height:22px;border-radius:99px;background:var(--warn);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 6px}
+.back{display:inline-block;color:var(--green);text-decoration:none;font-weight:500;margin:4px 4px 8px}

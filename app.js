@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 23 (11.10.2026)';
+const VERSION = 'Version 23.1 (11.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -160,7 +160,7 @@ const routes = {};
 function route() {
   const parts = (location.hash.slice(1) || 'sammlung').split('/');
   const name = parts[0];
-  const tabKey = ['pflanze', 'neu', 'bearbeiten'].includes(name) ? 'sammlung' : name === 'scan' ? (parts[1] === 'krank' ? 'diagnose' : 'scan') : ['einstellungen', 'giftig', 'mehr'].includes(name) ? 'mehr' : name;
+  const tabKey = ['pflanze', 'neu', 'bearbeiten'].includes(name) ? 'sammlung' : name === 'raum' ? 'sammlung' : name === 'scan' ? (parts[1] === 'krank' ? 'diagnose' : 'scan') : ['einstellungen', 'giftig', 'mehr'].includes(name) ? 'mehr' : name;
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tabKey));
   (routes[name] || routes.sammlung)(parts.slice(1));
   window.scrollTo(0, 0);
@@ -176,25 +176,37 @@ const fertDone = p => { const n = nextFert(p); return !!n && diffDays(today(), n
 const fertSwitch = p => nextFert(p) === null ? '' : `<label class="sw" aria-label="Gedüngt"><input type="checkbox" data-fertsw="${p.id}" ${fertDone(p) ? 'checked' : ''}><span></span></label>`;
 
 /* ---------- Sammlung ---------- */
+const fstat = p => { const n = nextFert(p); if (!n) return ''; const d = diffDays(today(), n); return d <= 0 ? '<span class="due-t">Düngen fällig</span>' : `Düngen in ${d} T.`; };
+const plantRow = p => `<div class="lrow"><a class="lmain" href="#pflanze/${p.id}">${thumb(p)}
+    <div class="grow"><div class="name">${esc(p.name)}</div>
+    ${p.latin ? `<div class="sub">${esc(p.latin)}</div>` : ''}
+    <div class="sub">Gießen alle ${waterInterval(p)} Tage${fstat(p) ? ' · ' + fstat(p) : ''}</div></div></a>${fertSwitch(p)}</div>`;
+const NO_ROOM = '__ohne';
 routes.sammlung = () => {
   const list = [...state.plants].sort((a, b) => a.name.localeCompare(b.name, 'de'));
   const fert = list.filter(p => { const n = nextFert(p); return n && diffDays(today(), n) <= 0; });
   if (navigator.setAppBadge) { try { fert.length ? navigator.setAppBadge(fert.length) : navigator.clearAppBadge(); } catch {} }
-  const fstat = p => { const n = nextFert(p); if (!n) return ''; const d = diffDays(today(), n); return d <= 0 ? '<span class="due-t">Düngen fällig</span>' : `Düngen in ${d} T.`; };
-  const item = p => `<div class="lrow"><a class="lmain" href="#pflanze/${p.id}">${thumb(p)}
-    <div class="grow"><div class="name">${esc(p.name)}</div>
-    ${p.latin ? `<div class="sub">${esc(p.latin)}</div>` : ''}
-    <div class="sub">Gießen alle ${waterInterval(p)} Tage${fstat(p) ? ' · ' + fstat(p) : ''}</div></div></a>${fertSwitch(p)}</div>`;
   let h = '';
   if (!list.length) h = `<div class="empty">Noch keine Pflanzen.<br><br><a class="btn" href="#neu">Pflanze hinzufügen</a></div>`;
   else {
     const rooms = [...new Set(list.map(p => p.room || ''))].sort((x, y) => (x === '') - (y === '') || x.localeCompare(y, 'de'));
-    h = rooms.map(r => `${rooms.length > 1 || r ? `<h2 class="rh">${esc(r || 'Ohne Raum')}</h2>` : ''}<div class="group">${list.filter(p => (p.room || '') === r).map(item).join('')}</div>`).join('');
+    h = '<div class="rtiles">' + rooms.map(r => {
+      const ps = list.filter(p => (p.room || '') === r), due = ps.filter(p => { const n = nextFert(p); return n && diffDays(today(), n) <= 0; }).length;
+      const covers = ps.filter(p => coverOf(p)).slice(0, 4);
+      return `<a class="rtile" href="#raum/${r ? encodeURIComponent(r) : NO_ROOM}">
+        <div class="rcov n${covers.length}">${covers.map(p => `<img data-photo="${esc(coverOf(p))}" alt="">`).join('') || `<span class="rleaf">${LEAF}</span>`}</div>
+        ${due ? `<span class="rdue">${due}</span>` : ''}
+        <div class="rname">${esc(r || 'Ohne Raum')}</div><div class="rcount">${ps.length} ${ps.length === 1 ? 'Pflanze' : 'Pflanzen'}</div></a>`;
+    }).join('') + '</div>';
   }
   render('Pflanzen', h, '<a class="plus" href="#neu" aria-label="Neue Pflanze">+</a>');
 };
-
-
+routes.raum = ([enc]) => {
+  const key = enc === NO_ROOM ? '' : decodeURIComponent(enc || '');
+  const ps = state.plants.filter(p => (p.room || '') === key).sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  if (!ps.length) return go('sammlung');
+  render(key || 'Ohne Raum', `<a class="back" href="#sammlung">‹ Alle Räume</a><div class="group">${ps.map(plantRow).join('')}</div>`, '<a class="plus" href="#neu" aria-label="Neue Pflanze">+</a>');
+};
 
 /* ---------- Gesundheitsverlauf ---------- */
 function healthCard(p) {
