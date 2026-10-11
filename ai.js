@@ -35,7 +35,7 @@ Antworte ausschließlich mit gültigem JSON nach dem vorgegebenen Schema, ohne T
  "kandidaten": [{"name_de": "deutscher Name", "latein": "wissenschaftlicher Name (Gattung und Art)", "sicherheit": "hoch|mittel|niedrig", "begruendung": "sichtbare Merkmale", "pruefen": "woran man es selbst prüfen kann"}],
  "hinweis": "z. B. wenn das Foto schlecht ist, sonst leer"
 }
-Nenne höchstens 3 Kandidaten, den wahrscheinlichsten zuerst. Wenn keine Pflanze erkennbar ist, ist die Liste leer.`,
+Nenne höchstens 3 Kandidaten, den wahrscheinlichsten zuerst. Nenne nur Kandidaten mit Sicherheit mittel oder hoch. Wenn keine Pflanze erkennbar ist, ist die Liste leer.`,
     krank: `{
  "pflanze_erkannt": "...",
  "gesamtbild": "gesund|leichte Auffälligkeiten|deutliche Probleme|nicht beurteilbar",
@@ -48,7 +48,7 @@ Nenne höchstens 3 Kandidaten, den wahrscheinlichsten zuerst. Wenn keine Pflanze
  "fachrat_wenn": "wann ein Fachbetrieb oder die Pflanzenschutzberatung gefragt werden sollte",
  "gefahren_hinweis": "nur wenn nötig, sonst leer"
 }
-Nenne höchstens 4 Ursachen, sortiert nach Wahrscheinlichkeit.`,
+Nenne höchstens 4 Ursachen, sortiert nach Wahrscheinlichkeit. Nenne nur Ursachen mit Wahrscheinlichkeit mittel oder hoch. Wenn keine sicher genug ist, lass die Liste leer.`,
     unkraut: `{
  "erkannt": "deutscher Name", "latein": "...", "sicherheit": "hoch|mittel|niedrig",
  "typ": "einjährig|mehrjährig|Wurzelunkraut|Gras|Gehölz|unbekannt",
@@ -140,7 +140,7 @@ Bei Verdacht auf gefährliche Arten (zum Beispiel Riesen-Bärenklau oder Ambrosi
   function renderInfo(d) {
     let h = '';
     const z = d.zweitmeinung_art;
-    if (z && (S(z.einschaetzung) || A(z.merkmale_zum_pruefen).length))
+    if (z && !/^niedrig/i.test(S(z.sicherheit)) && (S(z.einschaetzung) || A(z.merkmale_zum_pruefen).length))
       h += `<div class="warnbox"><b>Zweitmeinung zur Art</b> ${conf(z.sicherheit)}<br>${t(z.einschaetzung)}${ul(z.merkmale_zum_pruefen)}</div>`;
     h += sec('Kurzbeschreibung', t(d.kurzbeschreibung)) + sec('Licht', t(d.licht)) + sec('Gießen', t(d.giessen)) + sec('Düngen', t(d.duengen))
       + sec('Erde und Umtopfen', t(d.substrat_umtopfen)) + sec('Temperatur und Luftfeuchte', t(d.temperatur_luftfeuchte)) + sec('Im Winter', t(d.winter))
@@ -158,7 +158,8 @@ Bei Verdacht auf gefährliche Arten (zum Beispiel Riesen-Bärenklau oder Ambrosi
     let h = `<p><span class="badge ${cls}">${esc(gb || 'unbekannt')}</span> <span class="badge">Fotoqualität: ${esc(S(d.foto_qualitaet) || '?')}</span></p>`;
     if (S(d.gefahren_hinweis)) h += `<div class="warnbox">${t(d.gefahren_hinweis)}</div>`;
     h += sec('Erkannte Pflanze', t(d.pflanze_erkannt)) + sec('Was man sieht', ul(d.befunde));
-    const ur = A(d.ursachen).filter(x => x && typeof x === 'object');
+    const ur = A(d.ursachen).filter(x => x && typeof x === 'object' && !/^niedrig/i.test(S(x.wahrscheinlichkeit)));
+    if (!ur.length) h += '<p class="muted">Keine Ursache mit ausreichender Sicherheit erkennbar. Mache ein nahes Foto bei gutem Licht und versuche es noch einmal.</p>';
     if (ur.length) h += '<p><b>Mögliche Ursachen</b></p>' + ur.map(u => `<div class="card"><div class="name">${t(u.name)}</div>
       <span class="badge ${lvl(u.wahrscheinlichkeit)}">Wahrscheinlichkeit: ${esc(S(u.wahrscheinlichkeit) || '?')}</span><span class="badge">${esc(S(u.art))}</span>
       <p class="muted">${t(u.begruendung)}</p>${S(u.selbst_pruefen) ? `<p class="hint">Selbst prüfen: ${t(u.selbst_pruefen)}</p>` : ''}</div>`).join('');
@@ -170,6 +171,7 @@ Bei Verdacht auf gefährliche Arten (zum Beispiel Riesen-Bärenklau oder Ambrosi
     const g = d.gefahr || {}; let h = '';
     if (S(g.hinweis) && (/ja/i.test(S(g.giftig)) || /ja/i.test(S(g.hautreizung)) || /unklar/i.test(S(g.giftig))))
       h += `<div class="warnbox"><b>Achtung</b><br>${t(g.hinweis)}</div>`;
+    if (/^niedrig/i.test(S(d.sicherheit))) return h + '<p class="muted">Das Unkraut ließ sich nicht sicher bestimmen. Mache ein Foto von Blatt und Blüte aus der Nähe und versuche es noch einmal.</p>' + FOOT;
     h += `<p><b>${t(d.erkannt) || 'Unbekannt'}</b> <span class="muted">${t(d.latein)}</span><br>${conf(d.sicherheit)} <span class="badge">${esc(S(d.typ))}</span>
       <span class="badge ${/ja/i.test(S(d.invasiv)) ? 'late' : ''}">Invasiv: ${esc(S(d.invasiv) || 'unklar')}</span></p>`;
     h += sec('Zur Einordnung', t(d.invasiv_hinweis)) + sec('Nicht verwechseln mit', ul(d.verwechslung)) + sec('Entfernen', ul(d.entfernen))

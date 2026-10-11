@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 21 (10.10.2026)';
+const VERSION = 'Version 22 (11.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -420,6 +420,7 @@ async function plantnetLookup(file) {
 }
 
 /* Erkennung: Pl@ntNet, Claude oder beide */
+const MIN_SCORE = 0.2; // Pl@ntNet-Vorschläge unter 20 % werden nicht angezeigt
 async function claudeLookup(file) {
   if (!state.settings.anthropicKey) { const e = new Error('Schlüssel fehlt'); e.code = 'nokey'; throw e; }
   const blob = await shrink(file, 1024, 0.85);
@@ -440,9 +441,10 @@ async function lookupAll(file) {
   if (mode !== 'claude') jobs.push(plantnetLookup(file).then(r => r.map(x => ({ ...x, src: 'plantnet', label: 'Pl@ntNet: Sicherheit ' + Math.round(x.score * 100) + ' %' }))));
   if (mode !== 'plantnet') jobs.push(claudeLookup(file));
   const res = await Promise.allSettled(jobs);
-  const ok = res.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
+  const raw = res.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
   const bad = res.filter(r => r.status === 'rejected').map(r => r.reason);
-  if (!ok.length && bad.length) throw bad[0];
+  if (!raw.length && bad.length) throw bad[0];
+  const ok = raw.filter(x => x.src === 'claude' ? x.score >= .5 : x.score >= MIN_SCORE);
   const note = [];
   if (bad.length) note.push('Eine Quelle ist ausgefallen: ' + (bad[0].code === 'nokey' ? 'Schlüssel fehlt.' : String(bad[0].message || bad[0]).slice(0, 160)));
   const pn = ok.find(x => x.src === 'plantnet'), cl = ok.find(x => x.src === 'claude');
@@ -471,7 +473,7 @@ async function identify() {
   out.innerHTML = '<p><span class="spin"></span> Erkenne …</p>';
   try {
     const L = await lookupAll(scanFile); const results = L.items;
-    if (!results.length) { out.innerHTML = '<p class="muted">Keine Pflanze erkannt. Anderes Foto versuchen (Blatt oder Blüte, gutes Licht).</p>'; return; }
+    if (!results.length) { out.innerHTML = '<p class="muted">Keine sichere Erkennung. Anderes Foto versuchen (Blatt oder Blüte, gutes Licht).</p>'; return; }
     window.__scanResults = results;
     out.innerHTML = L.note.map(n => `<div class="warnbox">${esc(n)}</div>`).join('') + results.map((r, i) => {
       const sci = r.species.scientificNameWithoutAuthor, common = (r.species.commonNames || [])[0] || '';
@@ -561,7 +563,7 @@ function mergedCard(p, e) {
   const d = p.aiInfo && p.aiInfo.data, T = AI.t, S = AI.S;
   let h = '<h2 class="rh">Pflege</h2><div class="group pad">';
   const z = d && d.zweitmeinung_art;
-  if (z && S(z.latein)) {
+  if (z && S(z.latein) && !/^niedrig/i.test(S(z.sicherheit))) {
     const same = normSp(z.latein) === normSp(p.latin);
     if (same) h += `<p><span class="badge ok">Claude bestätigt die Art</span></p>`;
     else if (p.aiKeep !== normSp(z.latein)) h += `<div class="warnbox"><b>Claude sieht eine andere Art</b><br>Gespeichert: ${esc(p.latin || 'keine Angabe')}<br>Claude: <b>${T(z.latein)}</b>${S(z.name_de) ? ' (' + T(z.name_de) + ')' : ''}, Sicherheit ${T(z.sicherheit)}<br>${T(z.einschaetzung)}${AI.ul(z.merkmale_zum_pruefen)}
