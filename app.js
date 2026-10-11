@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 22 (11.10.2026)';
+const VERSION = 'Version 23 (11.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -195,6 +195,22 @@ routes.sammlung = () => {
 };
 
 
+
+/* ---------- Gesundheitsverlauf ---------- */
+function healthCard(p) {
+  const hs = p.health || [];
+  let h = '<h2 class="rh">Gesundheit</h2><div class="group">';
+  if (!hs.length) h += '<div class="lrow"><span class="l muted">Noch keine Prüfung gespeichert.</span></div>';
+  else h += hs.map((x, i) => [x, i]).reverse().map(([x, i]) => {
+    const dd = x.data || {}, gb = AI.S(dd.gesamtbild) || '?';
+    const cls = /gesund/i.test(gb) && !/auff|prob/i.test(gb) ? 'ok' : (/deutlich/i.test(gb) ? 'late' : 'due');
+    const top = (AI.A(dd.ursachen).filter(u => u && typeof u === 'object' && !/^niedrig/i.test(AI.S(u.wahrscheinlichkeit)))[0] || {}).name;
+    return `<details class="hrow"><summary>${x.thumb ? `<img class="hth" data-photo="${esc(x.thumb)}" alt="">` : ''}<span class="hmain"><b>${fmtDE(x.d)}</b><span class="sub">${top ? esc(AI.S(top)) : 'keine eindeutige Ursache'}</span></span><span class="badge ${cls}">${esc(gb)}</span></summary>
+      <div class="hbody">${x.note ? `<p class="sub">Notiz: ${esc(x.note)}</p>` : ''}${AI.renderHealth(dd)}<div class="actions"><button class="small danger" data-hdel="${p.id}:${i}">Eintrag löschen</button></div></div></details>`;
+  }).join('');
+  return h + `<div class="lrow"><a class="grow" style="color:var(--green);text-decoration:none;font-weight:500" href="#scan/krank/${p.id}">Neue Gesundheitsprüfung</a></div></div>`;
+}
+
 /* ---------- Fotos einer Pflanze ---------- */
 let selPhoto = null;
 function galleryCard(p) {
@@ -265,6 +281,7 @@ routes.pflanze = ([id]) => {
     ${p.notes ? `<div class="lrow"><span class="l" style="white-space:pre-wrap">${esc(p.notes)}</span></div>` : ''}</div>`;
   if (e && p.dbApprox) h += `<div class="warnbox">Werte stammen von einer verwandten Art (${esc(e.name)}). Nur ein Anhaltspunkt.</div>`;
   h += mergedCard(p, e);
+  h += healthCard(p);
   h += galleryCard(p);
   h += `<div class="foot"><a href="#bearbeiten/${p.id}">Bearbeiten</a><button class="link danger" data-del="${p.id}">Löschen</button></div>`;
   render(p.name, h);
@@ -548,9 +565,9 @@ function aiScanView(mode, pid) {
         ? `Aufgabe: Gesundheitscheck einer Pflanze anhand von ${blobs.length} Foto(s). Pflanze laut Nutzer: ${name || 'unbekannt'}. Standort: ${loc}. Beobachtung des Nutzers: "${note || 'keine'}". Aktuelles Datum: ${today()} (Jahreszeit berücksichtigen).`
         : `Aufgabe: Unkraut bestimmen anhand von ${blobs.length} Foto(s). Fundort laut Nutzer: ${place || 'unbekannt'}. Hinweise des Nutzers: "${note || 'keine'}". Aktuelles Datum: ${today()}. Region: Österreich.`;
       const r = await AI.run(mode, text, blobs, 6000);
-      aiLast = { mode, data: r.data, model: r.model, plantId: plant ? plant.id : null };
+      aiLast = { mode, data: r.data, model: r.model, plantId: plant ? plant.id : null, note };
       out.innerHTML = (health ? AI.renderHealth(r.data) : AI.renderWeed(r.data)) + usageLine(r.use)
-        + (plant && health ? `<div class="actions"><button type="button" data-aisave="1">Ergebnis bei „${esc(plant.name)}“ speichern</button></div>` : '');
+        + (health ? (plant ? `<div class="actions"><button type="button" data-aisave="1">Im Verlauf von „${esc(plant.name)}“ speichern</button></div>` : (state.plants.length ? `<div class="actions"><select id="aisel" style="flex:1"><option value="">Pflanze wählen …</option>${state.plants.map(q => `<option value="${q.id}">${esc(q.name)}</option>`).join('')}</select><button type="button" data-aisave="1">Speichern</button></div>` : '')) : '');
     } catch (e) { out.innerHTML = `<div class="warnbox">${aiErrorHTML(e)}</div>`; }
     finally { aiBusy = false; }
   });
@@ -594,9 +611,7 @@ function mergedCard(p, e) {
   }
   if (d && AI.A(d.unsicherheiten).length) h += `<div class="kv"><div class="k">Unsicher bei</div><div class="v">${AI.ul(d.unsicherheiten)}</div></div>`;
   h += `<p class="hint">Richtwerte${d ? ' und KI-Auswertung vom ' + fmtDE(p.aiInfo.d) : ''}, nicht geprüft. Kein Ersatz für Tierarzt, Arzt oder Fachberatung.</p>`;
-  h += `<div class="actions"><button class="small" data-aiinfo="${p.id}">${d ? 'Neu abfragen' : 'Mit Claude ergänzen'}</button><a class="btn small sec" href="#scan/krank/${p.id}">Gesundheit prüfen</a></div><div id="aiinfo-out"></div>`;
-  const hl = (p.health || []).slice(-1)[0];
-  if (hl) h += `<details><summary>Letzte Gesundheitsprüfung (${fmtDE(hl.d)})</summary>${AI.renderHealth(hl.data)}</details>`;
+  h += `<div class="actions"><button class="small" data-aiinfo="${p.id}">${d ? 'Neu abfragen' : 'Mit Claude ergänzen'}</button></div><div id="aiinfo-out"></div>`;
   return h + '</div>';
 }
 
@@ -698,7 +713,7 @@ routes.einstellungen = () => {
   };
   $('#exp').onclick = async () => {
     const photos = {};
-    for (const p of state.plants) for (const ph of [...photosOf(p), ...(p.crop ? [p.crop] : [])]) { const b = await getPhoto(ph); if (b) photos[ph] = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); }
+    for (const p of state.plants) for (const ph of [...photosOf(p), ...(p.crop ? [p.crop] : []), ...(p.health || []).map(x => x.thumb).filter(Boolean)]) { const b = await getPhoto(ph); if (b) photos[ph] = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); }
     const copy = { ...state, settings: { ...state.settings, plantnetKey: '', anthropicKey: '' } };
     const blob = new Blob([JSON.stringify({ version: 1, state: copy, photos })], { type: 'application/json' });
     const name = `kanji-backup-${today()}.json`;
@@ -768,7 +783,7 @@ document.addEventListener('click', async e => {
   else if (D.fert) { const p = state.plants.find(x => x.id === D.fert); p.lastFert = today(); (p.log = p.log || []).push({ t: 'fert', d: today() }); p.log = p.log.slice(-40); save(); toast('Gedüngt'); route(); }
   else if (D.del) {
     const p = state.plants.find(x => x.id === D.del);
-    if (confirm(`„${p.name}“ wirklich löschen?`)) { for (const ph of photosOf(p)) await delPhoto(ph); await dropCrop(p); state.plants = state.plants.filter(x => x !== p); save(); go('sammlung'); }
+    if (confirm(`„${p.name}“ wirklich löschen?`)) { for (const ph of photosOf(p)) await delPhoto(ph); for (const x of p.health || []) if (x.thumb) await delPhoto(x.thumb); await dropCrop(p); state.plants = state.plants.filter(x => x !== p); save(); go('sammlung'); }
   }
   else if (D.crop) openCrop(D.crop);
   else if (D.phsel !== undefined) { selPhoto = D.phsel || null; route(); }
@@ -797,8 +812,18 @@ document.addEventListener('click', async e => {
     p.aiKeep = normSp(z.latein); save(); route();
   }
   else if (D.aisave) {
-    const p = aiLast && state.plants.find(x => x.id === aiLast.plantId); if (!p) return;
-    p.health = [...(p.health || []), { d: today(), model: aiLast.model, data: aiLast.data }].slice(-5); save(); toast('Gespeichert'); go('pflanze/' + p.id);
+    const sel = $('#aisel'); const pid = aiLast && (aiLast.plantId || (sel && sel.value));
+    const p = pid && state.plants.find(x => x.id === pid); if (!p) return toast('Bitte zuerst eine Pflanze wählen');
+    let thumb = '';
+    if (aiFiles[0]) { try { thumb = await putPhoto(await shrink(aiFiles[0], 360, 0.75)); } catch {} }
+    p.health = [...(p.health || []), { d: today(), model: aiLast.model, data: aiLast.data, note: aiLast.note || '', thumb }].slice(-50);
+    save(); toast('Im Verlauf gespeichert'); go('pflanze/' + p.id);
+  }
+  else if (D.hdel) {
+    const [pid, ix] = D.hdel.split(':'), p = state.plants.find(x => x.id === pid), k = Number(ix); if (!p || !p.health || !p.health[k]) return;
+    if (!confirm('Diesen Eintrag löschen?')) return;
+    if (p.health[k].thumb) { try { await delPhoto(p.health[k].thumb); } catch {} }
+    p.health.splice(k, 1); save(); toast('Gelöscht'); route();
   }
   else if (D.wdel) { state.wishlist = state.wishlist.filter(w => w.id !== D.wdel); save(); route(); }
   else if (D.own) { const w = state.wishlist.find(x => x.id === D.own); state.wishlist = state.wishlist.filter(x => x !== w); save(); window.__prefill = { name: w.name }; go('neu'); }
