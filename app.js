@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 23.1 (11.10.2026)';
+const VERSION = 'Version 24.0 (31.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -26,18 +26,20 @@ function toast(msg) {
 }
 
 /* ---------- Speicher ---------- */
-const defaults = () => ({ plants: [], wishlist: [], settings: { plantnetKey: '', proxy: '', winter: true, anthropicKey: '', aiModel: 'claude-sonnet-5-5', erkennung: 'beide', theme: 'auto', aiUsage: { calls: 0, inTok: 0, outTok: 0, usd: 0 } } });
+const defaults = () => ({ plants: [], animals: [], wishlist: [], settings: { plantnetKey: '', proxy: '', winter: true, anthropicKey: '', aiModel: 'claude-sonnet-5-5', erkennung: 'beide', theme: 'auto', aiUsage: { calls: 0, inTok: 0, outTok: 0, usd: 0 } } });
 let state = defaults();
 function load() {
   try { const raw = localStorage.getItem(KEY); if (raw) state = { ...defaults(), ...JSON.parse(raw) }; }
   catch (e) { console.warn('Laden fehlgeschlagen', e); }
   state.settings = { ...defaults().settings, ...state.settings };
+  if (!Array.isArray(state.animals)) state.animals = [];
   normPhotos();
 }
-function normPhotos() { for (const p of state.plants || []) { if (!Array.isArray(p.photos)) p.photos = p.photo ? [p.photo] : []; if (p.photo && !p.photos.includes(p.photo)) p.photos.unshift(p.photo); if (!p.photo && p.photos.length) p.photo = p.photos[0]; } }
+function normPhotos() { for (const p of [...(state.plants || []), ...(state.animals || [])]) { if (!Array.isArray(p.photos)) p.photos = p.photo ? [p.photo] : []; if (p.photo && !p.photos.includes(p.photo)) p.photos.unshift(p.photo); if (!p.photo && p.photos.length) p.photo = p.photos[0]; } }
 const coverOf = p => p.crop || p.photo || '';
 async function dropCrop(p) { if (p.crop) { try { await delPhoto(p.crop); } catch {} p.crop = ''; } }
 const photosOf = p => (p.photos && p.photos.length ? p.photos : (p.photo ? [p.photo] : []));
+const itemById = id => state.plants.find(x => x.id === id) || state.animals.find(x => x.id === id);
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
   catch (e) { toast('Speichern fehlgeschlagen (Speicher voll?)'); }
@@ -160,7 +162,7 @@ const routes = {};
 function route() {
   const parts = (location.hash.slice(1) || 'sammlung').split('/');
   const name = parts[0];
-  const tabKey = ['pflanze', 'neu', 'bearbeiten'].includes(name) ? 'sammlung' : name === 'raum' ? 'sammlung' : name === 'scan' ? (parts[1] === 'krank' ? 'diagnose' : 'scan') : ['einstellungen', 'giftig', 'mehr'].includes(name) ? 'mehr' : name;
+  const tabKey = ['pflanze', 'neu', 'bearbeiten', 'tiere', 'tier', 'tier-neu', 'tier-bearbeiten'].includes(name) ? 'sammlung' : name === 'raum' ? 'sammlung' : name === 'scan' ? (parts[1] === 'krank' ? 'diagnose' : 'scan') : ['einstellungen', 'giftig', 'mehr'].includes(name) ? 'mehr' : name;
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tabKey));
   (routes[name] || routes.sammlung)(parts.slice(1));
   window.scrollTo(0, 0);
@@ -186,11 +188,11 @@ routes.sammlung = () => {
   const list = [...state.plants].sort((a, b) => a.name.localeCompare(b.name, 'de'));
   const fert = list.filter(p => { const n = nextFert(p); return n && diffDays(today(), n) <= 0; });
   if (navigator.setAppBadge) { try { fert.length ? navigator.setAppBadge(fert.length) : navigator.clearAppBadge(); } catch {} }
-  let h = '';
-  if (!list.length) h = `<div class="empty">Noch keine Pflanzen.<br><br><a class="btn" href="#neu">Pflanze hinzufügen</a></div>`;
+  let h = collTabs('pflanzen');
+  if (!list.length) h += `<div class="empty">Noch keine Pflanzen.<br><br><a class="btn" href="#neu">Pflanze hinzufügen</a></div>`;
   else {
     const rooms = [...new Set(list.map(p => p.room || ''))].sort((x, y) => (x === '') - (y === '') || x.localeCompare(y, 'de'));
-    h = '<div class="rtiles">' + rooms.map(r => {
+    h += '<div class="rtiles">' + rooms.map(r => {
       const ps = list.filter(p => (p.room || '') === r), due = ps.filter(p => { const n = nextFert(p); return n && diffDays(today(), n) <= 0; }).length;
       const covers = ps.filter(p => coverOf(p)).slice(0, 4);
       return `<a class="rtile" href="#raum/${r ? encodeURIComponent(r) : NO_ROOM}">
@@ -207,6 +209,65 @@ routes.raum = ([enc]) => {
   if (!ps.length) return go('sammlung');
   render(key || 'Ohne Raum', `<a class="back" href="#sammlung">‹ Alle Räume</a><div class="group">${ps.map(plantRow).join('')}</div>`, '<a class="plus" href="#neu" aria-label="Neue Pflanze">+</a>');
 };
+
+/* ---------- Tiere (Beobachtungen, Wildtiere) ----------
+   Eigene Liste state.animals. Die Pflanzen-Daten bleiben dadurch unberührt (keine Migration nötig).
+   Feld "place" (Fundort) ist im Datenmodell schon vorhanden, die Eingabe kommt in 24.2. */
+const PAW = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="10" r="1.7"/><circle cx="10.5" cy="6.5" r="1.7"/><circle cx="15.5" cy="6.5" r="1.7"/><circle cx="19" cy="10" r="1.7"/><path d="M12.800 12c-2.600 0-5.300 3.100-5.300 5.400 0 1.500 1.300 2.100 2.800 1.700 1-.3 1.600-.6 2.500-.6s1.500.3 2.500.6c1.500.4 2.800-.2 2.800-1.700 0-2.300-2.700-5.400-5.300-5.400z"/></svg>';
+const collTabs = on => `<div class="seg"><a href="#sammlung" class="${on === 'pflanzen' ? 'on' : ''}">Pflanzen</a><a href="#tiere" class="${on === 'tiere' ? 'on' : ''}">Tiere</a></div>`;
+const athumb = a => coverOf(a) ? `<img class="thumb" data-photo="${esc(coverOf(a))}" alt="">` : `<div class="thumb" style="color:var(--muted)">${PAW}</div>`;
+const animalRow = a => `<div class="lrow"><a class="lmain" href="#tier/${a.id}">${athumb(a)}
+    <div class="grow"><div class="name">${esc(a.name)}</div>
+    ${a.latin ? `<div class="sub">${esc(a.latin)}</div>` : ''}
+    <div class="sub">Gesehen am ${fmtDE(a.seen)}</div></div></a></div>`;
+routes.tiere = () => {
+  const list = [...state.animals].sort((a, b) => (b.seen || '').localeCompare(a.seen || '') || a.name.localeCompare(b.name, 'de'));
+  const h = collTabs('tiere') + (list.length
+    ? `<div class="group">${list.map(animalRow).join('')}</div>`
+    : `<div class="empty">Noch keine Tiere.<br><br><a class="btn" href="#tier-neu">Tier hinzufügen</a></div>`);
+  render('Tiere', h, '<a class="plus" href="#tier-neu" aria-label="Neues Tier">+</a>');
+};
+routes.tier = ([id]) => {
+  const a = state.animals.find(x => x.id === id); if (!a) return go('tiere');
+  let h = coverOf(a) ? `<img class="big cover" data-photo="${esc(coverOf(a))}" alt="">` : '';
+  if (a.latin) h += `<p class="muted" style="margin:2px 4px 8px">${esc(a.latin)}</p>`;
+  h += `<div class="group">
+    <div class="lrow"><span class="l">Gesehen am</span><span class="muted">${fmtDE(a.seen)}</span></div>
+    ${a.place ? `<div class="lrow"><span class="l">Fundort</span><span class="muted">${esc(a.place)}</span></div>` : ''}
+    ${a.notes ? `<div class="lrow"><span class="l" style="white-space:pre-wrap">${esc(a.notes)}</span></div>` : ''}</div>`;
+  h += galleryCard(a);
+  h += `<div class="foot"><a href="#tier-bearbeiten/${a.id}">Bearbeiten</a><button class="link danger" data-adel="${a.id}">Löschen</button></div>`;
+  render(a.name, h);
+};
+function animalForm(a) {
+  const isNew = !a.id; let saving = false;
+  render(isNew ? 'Neues Tier' : 'Bearbeiten', `<form id="f">
+    <label>Name oder Art</label><input name="name" required value="${esc(a.name || '')}" placeholder="z. B. Kohlmeise" autocomplete="off">
+    <label>Wissenschaftlicher Name (optional)</label><input name="latin" value="${esc(a.latin || '')}" autocomplete="off" autocapitalize="off">
+    <label>Gesehen am</label><input name="seen" type="date" required value="${esc(a.seen || today())}" max="${today()}">
+    <label>Notizen</label><textarea name="notes">${esc(a.notes || '')}</textarea>
+    <label>${isNew ? 'Foto' : 'Neues Titelbild'}</label>${coverOf(a) ? `<img class="thumb" data-photo="${esc(coverOf(a))}" alt="" style="margin-bottom:6px">` : ''}
+    <div class="pick"><span class="btn sec small" id="photolbl">Foto wählen</span><input name="photo" type="file" accept="image/*" aria-label="Foto wählen"></div>
+    <div class="actions"><button type="submit">Speichern</button><a class="btn sec" href="#${isNew ? 'tiere' : 'tier/' + a.id}">Abbrechen</a></div>
+  </form>`);
+  const f = $('#f');
+  f.elements.photo.addEventListener('change', ev => { $('#photolbl').textContent = ev.target.files[0] ? 'Foto gewählt' : 'Foto wählen'; });
+  f.addEventListener('submit', async ev => {
+    ev.preventDefault(); if (saving) return; saving = true;
+    const fd = new FormData(f);
+    const rec = isNew ? { id: uid(), created: today(), photos: [] } : a;
+    Object.assign(rec, { name: fd.get('name').trim(), latin: fd.get('latin').trim(), seen: fd.get('seen') || today(), place: rec.place || '', notes: fd.get('notes').trim() });
+    const file = fd.get('photo');
+    if (file && file.size) {
+      try { const b = await shrink(file, 900, 0.8); if (!b) throw new Error(); const nid = await putPhoto(b); await dropCrop(rec); rec.photos = [...photosOf(rec), nid]; rec.photo = nid; }
+      catch (e) { toast('Foto konnte nicht gespeichert werden'); }
+    }
+    if (isNew) state.animals.push(rec);
+    save(); toast('Gespeichert'); go('tier/' + rec.id);
+  });
+}
+routes['tier-neu'] = () => animalForm({});
+routes['tier-bearbeiten'] = ([id]) => { const a = state.animals.find(x => x.id === id); if (!a) return go('tiere'); animalForm(a); };
 
 /* ---------- Gesundheitsverlauf ---------- */
 function healthCard(p) {
@@ -241,7 +302,7 @@ function galleryCard(p) {
 
 /* ---------- Titelbild: Ausschnitt verschieben und zoomen ---------- */
 async function openCrop(id) {
-  const p = state.plants.find(x => x.id === id); if (!p || !p.photo) return;
+  const p = itemById(id); if (!p || !p.photo) return;
   const blob = await getPhoto(p.photo); if (!blob) return toast('Foto nicht gefunden');
   const bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' });
   const iw = bmp.width, ih = bmp.height, url = URL.createObjectURL(blob);
@@ -725,7 +786,7 @@ routes.einstellungen = () => {
   };
   $('#exp').onclick = async () => {
     const photos = {};
-    for (const p of state.plants) for (const ph of [...photosOf(p), ...(p.crop ? [p.crop] : []), ...(p.health || []).map(x => x.thumb).filter(Boolean)]) { const b = await getPhoto(ph); if (b) photos[ph] = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); }
+    for (const p of [...state.plants, ...state.animals]) for (const ph of [...photosOf(p), ...(p.crop ? [p.crop] : []), ...(p.health || []).map(x => x.thumb).filter(Boolean)]) { const b = await getPhoto(ph); if (b) photos[ph] = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); }
     const copy = { ...state, settings: { ...state.settings, plantnetKey: '', anthropicKey: '' } };
     const blob = new Blob([JSON.stringify({ version: 1, state: copy, photos })], { type: 'application/json' });
     const name = `kanji-backup-${today()}.json`;
@@ -742,7 +803,9 @@ routes.einstellungen = () => {
       if (!confirm('Vorhandene Daten auf diesem Gerät werden ersetzt. Fortfahren?')) return;
       const keep = { theme: state.settings.theme, erkennung: state.settings.erkennung, plantnetKey: state.settings.plantnetKey, anthropicKey: state.settings.anthropicKey, aiModel: state.settings.aiModel, aiUsage: state.settings.aiUsage };
       for (const [id, data] of Object.entries(j.photos || {})) await idbOp('readwrite', st => st.put(await0(data), id));
-      state = { ...defaults(), ...j.state }; state.settings = { ...defaults().settings, ...j.state.settings, ...keep }; normPhotos();
+      state = { ...defaults(), ...j.state }; state.settings = { ...defaults().settings, ...j.state.settings, ...keep };
+      if (!Array.isArray(state.animals)) state.animals = [];
+      normPhotos();
       save(); toast('Importiert'); go('sammlung');
     } catch { toast('Datei nicht lesbar'); }
   };
@@ -758,7 +821,7 @@ document.addEventListener('change', e => {
   const t = e.target; if (!t.dataset) return;
   const D = t.dataset, P = id => state.plants.find(x => x.id === id);
   if (D.phadd) {
-    const p = P(D.phadd); const files = [...(t.files || [])]; t.value = ''; if (!p || !files.length) return;
+    const p = itemById(D.phadd); const files = [...(t.files || [])]; t.value = ''; if (!p || !files.length) return;
     (async () => {
       let n = 0; p.photos = photosOf(p).slice();
       for (const f of files) { try { const id = await putPhoto(await shrink(f, 900, 0.8)); p.photos.push(id); if (!p.photo) p.photo = id; n++; } catch { toast('Ein Foto konnte nicht gespeichert werden'); } }
@@ -797,11 +860,15 @@ document.addEventListener('click', async e => {
     const p = state.plants.find(x => x.id === D.del);
     if (confirm(`„${p.name}“ wirklich löschen?`)) { for (const ph of photosOf(p)) await delPhoto(ph); for (const x of p.health || []) if (x.thumb) await delPhoto(x.thumb); await dropCrop(p); state.plants = state.plants.filter(x => x !== p); save(); go('sammlung'); }
   }
+  else if (D.adel) {
+    const a = state.animals.find(x => x.id === D.adel); if (!a) return;
+    if (confirm(`„${a.name}“ wirklich löschen?`)) { for (const ph of photosOf(a)) await delPhoto(ph); await dropCrop(a); state.animals = state.animals.filter(x => x !== a); save(); go('tiere'); }
+  }
   else if (D.crop) openCrop(D.crop);
   else if (D.phsel !== undefined) { selPhoto = D.phsel || null; route(); }
-  else if (D.phcover) { const p = state.plants.find(x => x.id === D.phcover); if (p && selPhoto) { await dropCrop(p); p.photo = selPhoto; save(); toast('Titelbild geändert'); route(); } }
+  else if (D.phcover) { const p = itemById(D.phcover); if (p && selPhoto) { await dropCrop(p); p.photo = selPhoto; save(); toast('Titelbild geändert'); route(); } }
   else if (D.phdel) {
-    const p = state.plants.find(x => x.id === D.phdel); if (!p || !selPhoto) return;
+    const p = itemById(D.phdel); if (!p || !selPhoto) return;
     if (!confirm('Dieses Foto löschen?')) return;
     await delPhoto(selPhoto); p.photos = photosOf(p).filter(x => x !== selPhoto); if (p.photo === selPhoto) { await dropCrop(p); p.photo = p.photos[0] || ''; } selPhoto = null; save(); toast('Foto gelöscht'); route();
   }
