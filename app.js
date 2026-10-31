@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 24.2 (31.10.2026)';
+const VERSION = 'Version 24.3 (31.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -219,7 +219,7 @@ const athumb = a => coverOf(a) ? `<img class="thumb" data-photo="${esc(coverOf(a
 const animalRow = a => `<div class="lrow"><a class="lmain" href="#tier/${a.id}">${athumb(a)}
     <div class="grow"><div class="name">${esc(a.name)}</div>
     ${a.latin ? `<div class="sub">${esc(a.latin)}</div>` : ''}
-    <div class="sub">Gesehen am ${fmtDE(a.seen)}</div></div></a></div>`;
+    <div class="sub">Gesehen am ${fmtDE(a.seen)}${a.place ? ' · ' + esc(a.place) : ''}</div></div></a></div>`;
 routes.tiere = () => {
   const list = [...state.animals].sort((a, b) => (b.seen || '').localeCompare(a.seen || '') || a.name.localeCompare(b.name, 'de'));
   const h = collTabs('tiere') + (list.length
@@ -252,6 +252,8 @@ function animalForm(a, pre = {}) {
     <label>Name oder Art</label><input name="name" required value="${esc(a.name || '')}" placeholder="z. B. Kohlmeise" autocomplete="off">
     <label>Wissenschaftlicher Name (optional)</label><input name="latin" value="${esc(a.latin || '')}" autocomplete="off" autocapitalize="off">
     <label>Gesehen am</label><input name="seen" type="date" required value="${esc(a.seen || today())}" max="${today()}">
+    <label>Fundort (optional)</label><input name="place" value="${esc(a.place || '')}" list="placelist" placeholder="z. B. Garten, Neusiedler See" autocomplete="off">
+    <datalist id="placelist">${[...new Set(state.animals.map(x => x.place).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'de')).map(p => `<option value="${esc(p)}">`).join('')}</datalist>
     <label>Notizen</label><textarea name="notes">${esc(a.notes || '')}</textarea>
     <label>${isNew ? 'Foto' : 'Neues Titelbild'}</label>${coverOf(a) ? `<img class="thumb" data-photo="${esc(coverOf(a))}" alt="" style="margin-bottom:6px">` : ''}<img id="tprev" class="thumb" alt="" style="display:none;margin-bottom:6px">
     <div class="pick"><span class="btn sec small" id="photolbl">Foto wählen</span><input name="photo" type="file" accept="image/*" aria-label="Foto wählen"></div>
@@ -293,7 +295,7 @@ function animalForm(a, pre = {}) {
     const fd = new FormData(f);
     const rec = isNew ? { id: uid(), created: today(), photos: [] } : a;
     const prevName = rec.name, prevLatin = rec.latin;
-    Object.assign(rec, { name: fd.get('name').trim(), latin: fd.get('latin').trim(), seen: fd.get('seen') || today(), place: rec.place || '', notes: fd.get('notes').trim() });
+    Object.assign(rec, { name: fd.get('name').trim(), latin: fd.get('latin').trim(), seen: fd.get('seen') || today(), place: (fd.get('place') || '').trim(), notes: fd.get('notes').trim() });
     const file = fd.get('photo');
     if (file && file.size) {
       try { const b = await shrink(file, 900, 0.8); if (!b) throw new Error(); const nid = await putPhoto(b); await dropCrop(rec); rec.photos = [...photosOf(rec), nid]; rec.photo = nid; }
@@ -304,7 +306,7 @@ function animalForm(a, pre = {}) {
     }
     if (isNew) { if (picked && picked.ebene) rec.ebene = picked.ebene; }
     else if (rec.name !== prevName || rec.latin !== prevLatin) { delete rec.aiInfo; delete rec.ebene; } // Infos gehörten zur alten Art
-    if (isNew) state.animals.push(rec);
+    if (isNew) { state.animals.push(rec); if (pre.wishId) state.wishlist = state.wishlist.filter(x => x.id !== pre.wishId); } // Wunsch erst nach dem Speichern entfernen
     save(); toast('Gespeichert'); go('tier/' + rec.id);
   });
 }
@@ -334,7 +336,7 @@ async function runAnimalInfo(id) {
   } catch (e) { out.innerHTML = `<div class="warnbox">${aiErrorHTML(e)}</div>`; }
   finally { aiBusy = false; }
 }
-routes['tier-neu'] = () => { const pre = window.__tprefill || {}; window.__tprefill = null; animalForm({ name: pre.name || '', latin: pre.latin || '' }, pre); };
+routes['tier-neu'] = () => { const pre = window.__tprefill || {}; window.__tprefill = null; animalForm({ name: pre.name || '', latin: pre.latin || '', notes: pre.notes || '' }, pre); };
 routes['tier-bearbeiten'] = ([id]) => { const a = state.animals.find(x => x.id === id); if (!a) return go('tiere'); animalForm(a); };
 
 /* ---------- Gesundheitsverlauf ---------- */
@@ -822,14 +824,18 @@ async function runAiInfo(id) {
 }
 
 /* ---------- Wunschliste ---------- */
-routes.wunsch = () => {
-  render('Wunschliste', `<form id="wf" class="card"><label>Pflanze</label><input name="name" required autocomplete="off">
-    <label>Notiz (optional, z. B. wo gesehen)</label><input name="note"><div class="actions"><button type="submit">Hinzufügen</button></div></form>
-    ${state.wishlist.length ? state.wishlist.map(w => `<div class="card"><div class="name">${esc(w.name)}</div>${w.note ? `<div class="muted">${esc(w.note)}</div>` : ''}
-    <div class="actions"><button class="small" data-own="${w.id}">Jetzt in Sammlung</button><button class="small danger" data-wdel="${w.id}">Entfernen</button></div></div>`).join('') : '<div class="empty">Noch nichts auf der Wunschliste.</div>'}`);
+/* Einträge ohne Feld typ (alte Daten, Scan) gelten als Pflanze. Tiere: typ 'tier'. */
+routes.wunsch = ([sub] = []) => {
+  const tier = sub === 'tiere', typ = tier ? 'tier' : 'pflanze';
+  const list = state.wishlist.filter(w => (w.typ || 'pflanze') === typ);
+  render('Wunschliste', `<div class="seg"><a href="#wunsch" class="${tier ? '' : 'on'}">Pflanzen</a><a href="#wunsch/tiere" class="${tier ? 'on' : ''}">Tiere</a></div>
+    <form id="wf" class="card"><label>${tier ? 'Tier' : 'Pflanze'}</label><input name="name" required autocomplete="off">
+    <label>Notiz (optional, z. B. ${tier ? 'wo und wann man es sieht' : 'wo gesehen'})</label><input name="note"><div class="actions"><button type="submit">Hinzufügen</button></div></form>
+    ${list.length ? list.map(w => `<div class="card"><div class="name">${esc(w.name)}</div>${w.note ? `<div class="muted">${esc(w.note)}</div>` : ''}
+    <div class="actions"><button class="small" data-own="${w.id}">${tier ? 'Gesehen: in Sammlung' : 'Jetzt in Sammlung'}</button><button class="small danger" data-wdel="${w.id}">Entfernen</button></div></div>`).join('') : '<div class="empty">Noch nichts auf der Wunschliste.</div>'}`);
   $('#wf').addEventListener('submit', e => {
     e.preventDefault(); const fd = new FormData(e.target);
-    state.wishlist.push({ id: uid(), name: fd.get('name').trim(), note: fd.get('note').trim() }); save(); routes.wunsch();
+    state.wishlist.push({ id: uid(), typ, name: fd.get('name').trim(), note: fd.get('note').trim() }); save(); routes.wunsch([sub]);
   });
 };
 
@@ -851,7 +857,7 @@ routes.mehr = () => {
   render('Mehr', `<h2 class="sect">Werkzeuge</h2>
     <div class="tiles two">${tile('#scan', 'erkennen', 'Pflanze erkennen')}${tile('#scan/tier', 'tier', 'Tier erkennen')}${tile('#scan/krank', 'diagnose', 'Diagnose')}${tile('#scan/unkraut', 'unkraut', 'Unkraut-Hilfe')}</div>
     <h2 class="sect">Nachschlagen</h2>
-    <div class="tiles two">${big('#giftig', 'giftig', 'Giftig-Check', 'Katze, Hund, Mensch')}${big('#wunsch', 'wunsch', 'Wunschliste', 'Pflanzen merken')}</div>
+    <div class="tiles two">${big('#giftig', 'giftig', 'Giftig-Check', 'Katze, Hund, Mensch')}${big('#wunsch', 'wunsch', 'Wunschliste', 'Pflanzen und Tiere merken')}</div>
     <h2 class="sect">App</h2>
     <div class="tiles two">${big('#einstellungen', 'einst', 'Einstellungen', 'Schlüssel, Modus, Backup')}</div>
     <p class="hint" style="margin-top:18px">${VERSION}</p>`);
@@ -1017,7 +1023,11 @@ document.addEventListener('click', async e => {
     p.health.splice(k, 1); save(); toast('Gelöscht'); route();
   }
   else if (D.wdel) { state.wishlist = state.wishlist.filter(w => w.id !== D.wdel); save(); route(); }
-  else if (D.own) { const w = state.wishlist.find(x => x.id === D.own); state.wishlist = state.wishlist.filter(x => x !== w); save(); window.__prefill = { name: w.name }; go('neu'); }
+  else if (D.own) {
+    const w = state.wishlist.find(x => x.id === D.own); if (!w) return;
+    if (w.typ === 'tier') { window.__tprefill = { name: w.name, notes: w.note || '', wishId: w.id }; go('tier-neu'); } // Wunsch bleibt, bis das Tier gespeichert ist
+    else { state.wishlist = state.wishlist.filter(x => x !== w); save(); window.__prefill = { name: w.name }; go('neu'); }
+  }
   else if (D.tadd !== undefined) {
     const k = tScanResults[Number(D.tadd)]; if (!k) return;
     window.__tprefill = { name: AI.S(k.name_de) || AI.S(k.latein), latin: AI.S(k.latein), ebene: AI.S(k.ebene), file: tScanFile }; go('tier-neu');
