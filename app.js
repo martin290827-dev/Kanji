@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 24.6 (31.10.2026)';
+const VERSION = 'Version 24.7 (31.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -165,6 +165,16 @@ function route() {
   const tabKey = ['pflanze', 'neu', 'bearbeiten', 'tiere', 'tier', 'tier-neu', 'tier-bearbeiten'].includes(name) ? 'sammlung' : name === 'raum' ? 'sammlung' : name === 'scan' ? (parts[1] === 'krank' ? 'diagnose' : 'scan') : ['einstellungen', 'giftig', 'mehr'].includes(name) ? 'mehr' : name;
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tabKey));
   document.documentElement.dataset.ctx = (['tiere', 'tier', 'tier-neu', 'tier-bearbeiten'].includes(name) || (name === 'scan' && parts[1] === 'tier') || (name === 'wunsch' && parts[1] === 'tiere')) ? 'tier' : 'pflanze';
+  const st = document.querySelector('.tabs a[data-tab=sammlung]');
+  if (st) {
+    if (!st.dataset.leaf) st.dataset.leaf = st.querySelector('svg').outerHTML;
+    const tier = document.documentElement.dataset.ctx === 'tier';
+    if (st.dataset.mode !== (tier ? 't' : 'p')) {
+      st.dataset.mode = tier ? 't' : 'p';
+      st.setAttribute('href', tier ? '#tiere' : '#sammlung');
+      st.innerHTML = (tier ? PAW : st.dataset.leaf) + (tier ? 'Tiere' : 'Sammlung');
+    }
+  }
   (routes[name] || routes.sammlung)(parts.slice(1));
   window.scrollTo(0, 0);
 }
