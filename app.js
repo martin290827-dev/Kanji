@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 24.7 (31.10.2026)';
+const VERSION = 'Version 24.8 (31.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -459,6 +459,8 @@ function formView(p, fromScan) {
     <select name="dbId"><option value="">– eigene Pflanze –</option>${opts}</select>
     <label>Name</label><input name="name" required value="${esc(p.name || '')}" autocomplete="off">
     <label>Botanischer Name</label><input name="latin" value="${esc(p.latin || '')}">
+    <label>Raum</label><select name="room"><option value="">Kein Raum</option>${roomList().map(r => `<option ${r === p.room ? 'selected' : ''}>${esc(r)}</option>`).join('')}<option value="__neu">Neuer Raum …</option></select>
+    <input name="roomnew" id="roomnewf" placeholder="Name des neuen Raums" autocomplete="off" style="display:none;margin-top:8px">
     <label>Standort</label><select name="location"><option value="innen" ${p.location !== 'aussen' ? 'selected' : ''}>Drinnen</option><option value="aussen" ${p.location === 'aussen' ? 'selected' : ''}>Draußen</option></select>
     <label>Gießen alle (Tage)</label><input name="waterDays" type="number" min="1" max="90" value="${esc(p.waterDays ?? 7)}">
     <input name="fertDays" type="hidden" value="${esc(p.fertDays ?? '')}"><input name="lastFert" type="hidden" value="${esc(p.lastFert || '')}">
@@ -496,6 +498,11 @@ function formView(p, fromScan) {
       toast('Formular ausgefüllt'); el.name.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
   }
+  f.room.addEventListener('change', () => {
+    const v = f.room.value; $('#roomnewf').style.display = v === '__neu' ? 'block' : 'none';
+    if (v === '__neu') $('#roomnewf').focus();
+    else if (['Balkon', 'Garten'].includes(v)) f.location.value = 'aussen'; else if (v) f.location.value = 'innen';
+  });
   f.dbId.addEventListener('change', () => {
     const el = f.elements, e = dbById(el.dbId.value); if (!e) return;
     if (!el.name.value) el.name.value = e.name; el.latin.value = e.latin;
@@ -508,7 +515,7 @@ function formView(p, fromScan) {
     const origDbId = p.dbId, origApprox = !!p.dbApprox;
     Object.assign(rec, {
       name: fd.get('name').trim(), latin: fd.get('latin').trim(), dbId: fd.get('dbId') || '',
-      location: fd.get('location'), room: p.room || '', waterDays: Number(fd.get('waterDays')) || 7,
+      location: fd.get('location'), room: fd.get('room') === '__neu' ? (fd.get('roomnew') || '').trim() : (fd.get('room') || ''), waterDays: Number(fd.get('waterDays')) || 7,
       fertDays: fd.get('fertDays') ? Number(fd.get('fertDays')) : '',
       lastFert: fd.get('lastFert') || '', notes: fd.get('notes').trim()
     });
