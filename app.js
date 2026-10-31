@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 24.0 (31.10.2026)';
+const VERSION = 'Version 24.1 (31.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -234,14 +234,21 @@ routes.tier = ([id]) => {
   h += `<div class="group">
     <div class="lrow"><span class="l">Gesehen am</span><span class="muted">${fmtDE(a.seen)}</span></div>
     ${a.place ? `<div class="lrow"><span class="l">Fundort</span><span class="muted">${esc(a.place)}</span></div>` : ''}
+    ${a.ebene && !/^art/i.test(a.ebene) ? `<div class="lrow"><span class="l">Bestimmung</span><span class="muted">nur bis ${esc(a.ebene)} (KI)</span></div>` : ''}
     ${a.notes ? `<div class="lrow"><span class="l" style="white-space:pre-wrap">${esc(a.notes)}</span></div>` : ''}</div>`;
+  h += animalInfoCard(a);
   h += galleryCard(a);
   h += `<div class="foot"><a href="#tier-bearbeiten/${a.id}">Bearbeiten</a><button class="link danger" data-adel="${a.id}">Löschen</button></div>`;
   render(a.name, h);
 };
 function animalForm(a) {
-  const isNew = !a.id; let saving = false;
-  render(isNew ? 'Neues Tier' : 'Bearbeiten', `<form id="f">
+  const isNew = !a.id; let saving = false, tFile = null, tResults = [], picked = null;
+  const scanCard = isNew ? `<div class="card"><div class="name">Per Foto erkennen (Claude)</div>
+    <div class="actions">
+      <div class="pick"><span class="btn small">Foto aufnehmen</span><input id="tcam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
+      <div class="pick"><span class="btn sec small">Aus Galerie</span><input id="tgal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
+    </div><div id="tres"></div></div>` : '';
+  render(isNew ? 'Neues Tier' : 'Bearbeiten', `${scanCard}<form id="f">
     <label>Name oder Art</label><input name="name" required value="${esc(a.name || '')}" placeholder="z. B. Kohlmeise" autocomplete="off">
     <label>Wissenschaftlicher Name (optional)</label><input name="latin" value="${esc(a.latin || '')}" autocomplete="off" autocapitalize="off">
     <label>Gesehen am</label><input name="seen" type="date" required value="${esc(a.seen || today())}" max="${today()}">
@@ -252,19 +259,77 @@ function animalForm(a) {
   </form>`);
   const f = $('#f');
   f.elements.photo.addEventListener('change', ev => { $('#photolbl').textContent = ev.target.files[0] ? 'Foto gewählt' : 'Foto wählen'; });
+  if (isNew) {
+    f.elements.name.addEventListener('input', () => { picked = null; });
+    f.elements.latin.addEventListener('input', () => { picked = null; });
+    const pickT = async e => {
+      const file = e.target.files && e.target.files[0]; e.target.value = ''; if (!file || aiBusy) return;
+      tFile = file; picked = null; aiBusy = true; const out = $('#tres'); out.innerHTML = spinner;
+      try {
+        const L = await animalLookup(file); tResults = L.items;
+        const hint = L.hinweis ? `<p class="hint">${esc(L.hinweis)}</p>` : '';
+        out.innerHTML = (tResults.length
+          ? '<p class="muted">Passenden Vorschlag antippen:</p>' + tResults.map((k, i) => `<button type="button" class="sec" style="display:block;width:100%;text-align:left;margin:6px 0" data-tpick="${i}">${esc(AI.S(k.name_de) || AI.S(k.latein))}<br><span class="hint">${esc([AI.S(k.latein), AI.S(k.ebene), 'Sicherheit ' + AI.S(k.sicherheit)].filter(Boolean).join(' · '))}</span></button>
+            ${AI.S(k.begruendung) ? `<p class="hint">${esc(AI.S(k.begruendung))}${AI.S(k.pruefen) ? ' Prüfen: ' + esc(AI.S(k.pruefen)) : ''}</p>` : ''}`).join('')
+            + '<p class="hint">KI-Vorschlag, nicht geprüft. Ähnliche Arten sind per Foto schwer zu unterscheiden.</p>'
+          : '<p class="muted">Keine sichere Erkennung. Anderes Foto versuchen: Tier groß, scharf und gut beleuchtet im Bild.</p>') + hint + usageLine(L.use);
+      } catch (err) { out.innerHTML = `<div class="warnbox">${aiErrorHTML(err)}</div>`; }
+      finally { aiBusy = false; }
+    };
+    $('#tcam').addEventListener('change', pickT); $('#tgal').addEventListener('change', pickT);
+    $('#tres').addEventListener('click', ev => {
+      const btn = ev.target.closest('button[data-tpick]'); if (!btn) return;
+      const k = tResults[Number(btn.dataset.tpick)]; if (!k) return;
+      const el = f.elements; el.name.value = AI.S(k.name_de) || AI.S(k.latein); el.latin.value = AI.S(k.latein);
+      picked = { ebene: AI.S(k.ebene) };
+      toast('Formular ausgefüllt'); el.name.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
   f.addEventListener('submit', async ev => {
     ev.preventDefault(); if (saving) return; saving = true;
     const fd = new FormData(f);
     const rec = isNew ? { id: uid(), created: today(), photos: [] } : a;
+    const prevName = rec.name, prevLatin = rec.latin;
     Object.assign(rec, { name: fd.get('name').trim(), latin: fd.get('latin').trim(), seen: fd.get('seen') || today(), place: rec.place || '', notes: fd.get('notes').trim() });
     const file = fd.get('photo');
     if (file && file.size) {
       try { const b = await shrink(file, 900, 0.8); if (!b) throw new Error(); const nid = await putPhoto(b); await dropCrop(rec); rec.photos = [...photosOf(rec), nid]; rec.photo = nid; }
       catch (e) { toast('Foto konnte nicht gespeichert werden'); }
+    } else if (isNew && tFile) {
+      try { const b = await shrink(tFile, 900, 0.8); if (!b) throw new Error(); const nid = await putPhoto(b); rec.photos = [nid]; rec.photo = nid; }
+      catch (e) { toast('Foto konnte nicht gespeichert werden'); }
     }
+    if (isNew) { if (picked && picked.ebene) rec.ebene = picked.ebene; }
+    else if (rec.name !== prevName || rec.latin !== prevLatin) { delete rec.aiInfo; delete rec.ebene; } // Infos gehörten zur alten Art
     if (isNew) state.animals.push(rec);
     save(); toast('Gespeichert'); go('tier/' + rec.id);
   });
+}
+/* Erkennung und Infos per Claude (nur auf Knopfdruck, nichts wird automatisch übernommen) */
+async function animalLookup(file) {
+  if (!state.settings.anthropicKey) { const e = new Error('Schlüssel fehlt'); e.code = 'nokey'; throw e; }
+  const blob = await shrink(file, 1024, 0.85);
+  if (!blob) throw new Error('Das Foto konnte nicht gelesen werden.');
+  const r = await AI.run('tier_art', `Bestimme das Tier auf dem Foto. Es ist ein Wildtier in Österreich oder Mitteleuropa. Aktuelles Datum: ${today()} (Jahreszeit berücksichtigen).`, [blob], 1800);
+  const items = AI.A(r.data && r.data.kandidaten).filter(k => k && typeof k === 'object' && (AI.S(k.latein) || AI.S(k.name_de)) && /^(hoch|mittel)/i.test(AI.S(k.sicherheit))).slice(0, 3);
+  return { items, hinweis: AI.S(r.data && r.data.hinweis), use: r.use };
+}
+function animalInfoCard(a) {
+  const i = a.aiInfo;
+  let h = '<h2 class="rh">Infos zur Art</h2><div class="group pad">';
+  h += i ? `<p class="hint">Stand ${fmtDE(i.d)} · ${esc(i.model)}</p>${AI.renderAnimalInfo(i.data)}`
+    : `<p class="muted">Beschreibung, Lebensraum, Ernährung und Verhalten zu „${esc(a.name)}“, ausgewertet von Claude (etwa 1 Cent).</p>`;
+  return h + `<div class="actions"><button class="small" data-tinfo="${a.id}">${i ? 'Neu abfragen' : 'Mit Claude nachschlagen'}</button></div><div id="tinfo-out"></div></div>`;
+}
+async function runAnimalInfo(id) {
+  const a = state.animals.find(x => x.id === id); const out = $('#tinfo-out'); if (!a || !out || aiBusy) return;
+  aiBusy = true; out.innerHTML = spinner;
+  try {
+    const text = `Aufgabe: Informationen zu einer Tierart nachschlagen. Name laut Nutzer oder Erkennung: ${a.name.slice(0, 100)}. Wissenschaftlicher Name: ${(a.latin || 'unbekannt').slice(0, 100)}.${a.ebene && !/^art/i.test(a.ebene) ? ` Die Bestimmung gilt nur bis ${a.ebene.slice(0, 30)}.` : ''} Beobachtet am ${a.seen} in Österreich oder Mitteleuropa. Aktuelles Datum: ${today()}.`;
+    const r = await AI.run('tier_info', text, [], 4000);
+    a.aiInfo = { d: today(), model: r.model, data: r.data }; save(); toast('Infos gespeichert'); route();
+  } catch (e) { out.innerHTML = `<div class="warnbox">${aiErrorHTML(e)}</div>`; }
+  finally { aiBusy = false; }
 }
 routes['tier-neu'] = () => animalForm({});
 routes['tier-bearbeiten'] = ([id]) => { const a = state.animals.find(x => x.id === id); if (!a) return go('tiere'); animalForm(a); };
@@ -877,6 +942,7 @@ document.addEventListener('click', async e => {
     p.room = v; save(); toast('Raum gespeichert'); route();
   }
   else if (D.aiinfo) await runAiInfo(D.aiinfo);
+  else if (D.tinfo) await runAnimalInfo(D.tinfo);
   else if (D.artswitch) {
     const p = state.plants.find(x => x.id === D.artswitch), z = p && p.aiInfo && p.aiInfo.data && p.aiInfo.data.zweitmeinung_art; if (!z || !z.latein) return;
     const m = dbMatch(String(z.latein)), oldName = p.name, oldLat = p.latin, oldE = dbById(p.dbId);
