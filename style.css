@@ -189,3 +189,20 @@ details.hrow summary::-webkit-details-marker{display:none}
 .back{display:inline-block;color:var(--green);text-decoration:none;font-weight:500;margin:4px 4px 8px}
 input[type=date]{min-height:44px;text-align:left}
 input[type=date]::-webkit-date-and-time-value{text-align:left}
+
+/* 24.5 Farbwelten: Pflanzen grün, Tiere indigo (gesetzt per html[data-ctx]) */
+:root[data-ctx=tier]{--green:#5856d6;--green-ink:#ffffff;--bg:#f2f2f8;--blur:rgba(242,242,248,.86)}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme=light])[data-ctx=tier]{--green:#8e8cff;--green-ink:#14133d;--bg:#1a1a24;--blur:rgba(26,26,36,.86)}
+}
+:root[data-theme=dark][data-ctx=tier]{--green:#8e8cff;--green-ink:#14133d;--bg:#1a1a24;--blur:rgba(26,26,36,.86)}
+body{transition:background-color .25s}
+.thumb{background:var(--fill);color:var(--green)}
+@supports (background:color-mix(in srgb,red 10%,transparent)){
+  .thumb,.rcov.n0{background:color-mix(in srgb,var(--green) 14%,transparent)}
+  .seg a.on{color:var(--green)}
+}
+.thumb svg{width:28px;height:28px}
+.top{background:var(--blur)}
+.top h1::after{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-left:8px;vertical-align:middle;position:relative;top:-2px}
+.tile .rleaf,.tile svg{color:var(--green)}

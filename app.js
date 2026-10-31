@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 24.4 (31.10.2026)';
+const VERSION = 'Version 24.5 (31.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -164,6 +164,7 @@ function route() {
   const name = parts[0];
   const tabKey = ['pflanze', 'neu', 'bearbeiten', 'tiere', 'tier', 'tier-neu', 'tier-bearbeiten'].includes(name) ? 'sammlung' : name === 'raum' ? 'sammlung' : name === 'scan' ? (parts[1] === 'krank' ? 'diagnose' : 'scan') : ['einstellungen', 'giftig', 'mehr'].includes(name) ? 'mehr' : name;
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tabKey));
+  document.documentElement.dataset.ctx = (['tiere', 'tier', 'tier-neu', 'tier-bearbeiten'].includes(name) || (name === 'scan' && parts[1] === 'tier') || (name === 'wunsch' && parts[1] === 'tiere')) ? 'tier' : 'pflanze';
   (routes[name] || routes.sammlung)(parts.slice(1));
   window.scrollTo(0, 0);
 }
@@ -215,7 +216,7 @@ routes.raum = ([enc]) => {
    Feld "place" (Fundort) ist im Datenmodell schon vorhanden, die Eingabe kommt in 24.2. */
 const PAW = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="10" r="1.7"/><circle cx="10.5" cy="6.5" r="1.7"/><circle cx="15.5" cy="6.5" r="1.7"/><circle cx="19" cy="10" r="1.7"/><path d="M12.800 12c-2.600 0-5.300 3.100-5.300 5.400 0 1.500 1.300 2.100 2.800 1.700 1-.3 1.600-.6 2.500-.6s1.500.3 2.500.6c1.500.4 2.800-.2 2.800-1.700 0-2.300-2.700-5.400-5.300-5.400z"/></svg>';
 const collTabs = on => `<div class="seg"><a href="#sammlung" class="${on === 'pflanzen' ? 'on' : ''}">Pflanzen</a><a href="#tiere" class="${on === 'tiere' ? 'on' : ''}">Tiere</a></div>`;
-const athumb = a => coverOf(a) ? `<img class="thumb" data-photo="${esc(coverOf(a))}" alt="">` : `<div class="thumb" style="color:var(--muted)">${PAW}</div>`;
+const athumb = a => coverOf(a) ? `<img class="thumb" data-photo="${esc(coverOf(a))}" alt="">` : `<div class="thumb">${PAW}</div>`;
 const animalRow = a => `<div class="lrow"><a class="lmain" href="#tier/${a.id}">${athumb(a)}
     <div class="grow"><div class="name">${esc(a.name)}</div>
     ${a.latin ? `<div class="sub">${esc(a.latin)}</div>` : ''}
