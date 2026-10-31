@@ -1,13 +1,13 @@
 {
   "name": "Kanji",
   "short_name": "Kanji",
-  "description": "Pflanzen erkennen, pflegen und Gießen nicht vergessen.",
+  "description": "Pflanzen pflegen und Tiere in der Natur erkennen und sammeln.",
   "lang": "de",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f4f6f1",
-  "theme_color": "#2f6b3f",
+  "background_color": "#f4f4f1",
+  "theme_color": "#2e9e6a",
   "icons": [
     {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
     {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}

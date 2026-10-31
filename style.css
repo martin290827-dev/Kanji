@@ -206,3 +206,11 @@ body{transition:background-color .25s}
 .top{background:var(--blur)}
 .top h1::after{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-left:8px;vertical-align:middle;position:relative;top:-2px}
 .tile .rleaf,.tile svg{color:var(--green)}
+
+/* 24.6 Symbole in Knöpfen */
+.bi{width:1.15em;height:1.15em;margin-right:7px;vertical-align:-.2em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+button.small .bi,.btn.small .bi{width:1.05em;height:1.05em;margin-right:5px}
+.pick.grow .btn .bi{margin-right:5px}
+.pick.grow .btn{font-size:15px;padding:12px 6px}
+.pick.grow .btn .bi{width:1.2em;height:1.2em;margin-right:4px}
+@media (max-width:374px){.pick.grow .btn{font-size:14px}.pick.grow .btn .bi{margin-right:3px}}

@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 24.5 (31.10.2026)';
+const VERSION = 'Version 24.6 (31.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -1049,6 +1049,39 @@ document.addEventListener('click', async e => {
     window.__prefill = pre; go('neu');
   }
 });
+
+/* ---------- Symbole in Knöpfen (24.6) ---------- */
+const BI = {
+  camera: '<path d="M4 8a2 2 0 0 1 2-2h2l1.500-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.500" r="3.300"/>',
+  image: '<rect x="3" y="4.500" width="18" height="15" rx="3"/><circle cx="9" cy="10" r="1.600"/><path d="M21 16l-5-5-8 8.500"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  check: '<path d="M5 12.500l4.500 4.500L19 7.500"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
+  addc: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+  heart: '<path d="M12 20.500s-7.500-4.600-7.500-10.200A4.300 4.300 0 0 1 12 7.600a4.300 4.300 0 0 1 7.500 2.700c0 5.600-7.500 10.200-7.500 10.200z"/>',
+  health: '<rect x="3.500" y="6.500" width="17" height="13" rx="2.500"/><path d="M9 6.500V5.500A1.500 1.500 0 0 1 10.500 4h3A1.500 1.500 0 0 1 15 5.500v1M12 10v6M9 13h6"/>',
+  spark: '<path d="M11 3l1.800 5.200L18 10l-5.200 1.800L11 17l-1.800-5.200L4 10l5.200-1.800zM18.500 15.500l.7 1.800 1.800.7-1.800.7-.7 1.800-.7-1.800-1.800-.7 1.800-.7z"/>',
+  star: '<path d="M12 4l2.500 5 5.500.8-4 3.900.9 5.500L12 16.600 7.100 19.200 8 13.700 4 9.800 9.500 9z"/>',
+  crop: '<path d="M7 3v14h14M3 7h14v14"/>',
+  down: '<path d="M12 4v11M7.500 10.500L12 15l4.500-4.500M5 20h14"/>',
+  up: '<path d="M12 16V5M7.500 9.500L12 5l4.500 4.500M5 20h14"/>',
+  undo: '<path d="M4 6v6h6M4.500 12a8 8 0 1 1 2.300 6"/>',
+  bolt: '<path d="M13 3L5 13.500h6L10 21l8-10.500h-6z"/>'
+};
+const BI_MAP = [[/^(Foto aufnehmen|Noch ein Foto)$/, 'camera'], [/Galerie|^Foto wählen$/, 'image'], [/^(Pflanze|Tier) hinzufügen$|^Hinzufügen$/, 'plus'],
+  [/^Speichern$|speichern$|übernehmen$|^OK$/, 'check'], [/^Abbrechen$/, 'x'], [/löschen$|^Entfernen$|^Löschen$/, 'trash'], [/Sammlung$/, 'addc'], [/^Wunschliste$/, 'heart'],
+  [/Gesundheit prüfen/, 'health'], [/abfragen|^Infos holen$|nachschlagen|ergänzen|^Auswerten$/, 'spark'], [/Titelbild/, 'star'], [/Ausschnitt/, 'crop'],
+  [/^Exportieren$/, 'down'], [/^Importieren$/, 'up'], [/^Zurücksetzen$/, 'undo'], [/^Verbindung testen$/, 'bolt']];
+function decorateButtons(root) {
+  (root || document).querySelectorAll('button, .btn').forEach(el => {
+    if (el.children.length || el.classList.contains('plus') || el.closest('.tb, .ph, .sw, .tabs')) return;
+    const t = el.textContent.trim(); if (!t) return;
+    const hit = BI_MAP.find(([re]) => re.test(t)); if (!hit) return;
+    el.insertAdjacentHTML('afterbegin', `<svg class="bi" viewBox="0 0 24 24" aria-hidden="true">${BI[hit[1]]}</svg>`);
+  });
+}
+new MutationObserver(() => decorateButtons()).observe(document.documentElement, { childList: true, subtree: true });
 
 /* ---------- Start ---------- */
 window.addEventListener('hashchange', route);
