@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 24.3 (31.10.2026)';
+const VERSION = 'Version 24.4 (31.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -518,23 +518,28 @@ routes.neu = () => { const pre = window.__prefill || {}; window.__prefill = null
 routes.bearbeiten = ([id]) => { const p = state.plants.find(x => x.id === id); if (!p) return go('sammlung'); formView(p); };
 
 /* ---------- Scan / Nachschlagen ---------- */
-let scanFile = null, scanBusy = false;
+let scanFiles = [], scanBusy = false; const MAX_SCAN = 5; // bis 5 Fotos derselben Pflanze (Pl@ntNet-Limit)
 routes.scanPlant = () => {
-  scanFile = null;
+  scanFiles = [];
   const noKey = !state.settings.plantnetKey && !state.settings.anthropicKey;
   render('Scan', `${modeTabs('pflanze')}<div class="group pad">
     ${noKey ? '<div class="warnbox">Kein Schlüssel hinterlegt. <a href="#einstellungen">In den Einstellungen eintragen</a>.</div>' : ''}
     <img id="scanprev" class="big" style="display:none;margin:0 0 10px" alt="">
     <div class="actions" style="margin-top:0">
-      <div class="pick grow"><span class="btn block">Foto aufnehmen</span><input id="scancam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
-      <div class="pick grow"><span class="btn sec block">Aus Galerie</span><input id="scangal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
+      <div class="pick grow"><span class="btn block" id="lbcam">Foto aufnehmen</span><input id="scancam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
+      <div class="pick grow"><span class="btn sec block" id="lbgal">Aus Galerie</span><input id="scangal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
     </div>
-    <div id="scanres"></div></div>`);
+    <div id="scanmore"></div><div id="scanres"></div></div>`);
   const pick = e => {
     const f = e.target.files && e.target.files[0]; e.target.value = '';
-    if (!f) return;
-    scanFile = f;
+    if (!f || scanBusy) return;
+    if (scanFiles.length >= MAX_SCAN) { toast('Höchstens ' + MAX_SCAN + ' Fotos'); return; }
+    scanFiles.push(f);
     const prev = $('#scanprev'); prev.src = URL.createObjectURL(f); prev.style.display = 'block';
+    const n = scanFiles.length;
+    $('#lbcam').textContent = 'Noch ein Foto'; $('#lbgal').textContent = 'Noch aus Galerie';
+    $('#scanmore').innerHTML = `<p class="hint">${n} ${n === 1 ? 'Foto' : 'Fotos'} (höchstens ${MAX_SCAN}). Bei unsicherem Ergebnis ein weiteres Foto hinzufügen (Blatt, Blüte, ganze Pflanze). Alle Fotos werden zusammen neu geprüft. <a href="#" id="scanreset">Neu beginnen</a></p>`;
+    $('#scanreset').addEventListener('click', ev => { ev.preventDefault(); routes.scanPlant(); });
     $('#scanres').innerHTML = '';
     identify();
   };
@@ -555,12 +560,12 @@ routes.giftig = () => {
   });
 };
 
-async function plantnetLookup(file) {
+async function plantnetLookup(files) {
   if (!state.settings.plantnetKey) { const e = new Error('Schlüssel fehlt'); e.code = 'nokey'; throw e; }
-  let blob;
-  try { blob = await shrink(file, 1024, 0.85); if (!blob) throw new Error(); }
+  let blobs;
+  try { blobs = await Promise.all(files.map(f => shrink(f, 1024, 0.85))); if (blobs.some(b => !b)) throw new Error(); }
   catch { throw new Error('Das Foto konnte nicht gelesen werden. Bitte ein anderes Foto versuchen.'); }
-  const fd = new FormData(); fd.append('images', blob, 'foto.jpg'); fd.append('organs', 'auto');
+  const fd = new FormData(); blobs.forEach(b => { fd.append('images', b, 'foto.jpg'); fd.append('organs', 'auto'); });
   const base = (state.settings.proxy || PLANTNET).replace(/\/$/, '');
   const url = `${base}/v2/identify/all?api-key=${encodeURIComponent(state.settings.plantnetKey)}&lang=de&nb-results=3&include-related-images=false`;
   const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 30000);
@@ -581,25 +586,25 @@ async function plantnetLookup(file) {
 
 /* Erkennung: Pl@ntNet, Claude oder beide */
 const MIN_SCORE = 0.2; // Pl@ntNet-Vorschläge unter 20 % werden nicht angezeigt
-async function claudeLookup(file) {
+async function claudeLookup(files) {
   if (!state.settings.anthropicKey) { const e = new Error('Schlüssel fehlt'); e.code = 'nokey'; throw e; }
-  const blob = await shrink(file, 1024, 0.85);
-  if (!blob) throw new Error('Das Foto konnte nicht gelesen werden.');
-  const r = await AI.run('art', 'Bestimme die Pflanze auf dem Foto. Beachte: Zimmerpflanze, Gartenpflanze oder Wildpflanze in Mitteleuropa möglich.', [blob], 1200);
+  const blobs = await Promise.all(files.map(f => shrink(f, 1024, 0.85)));
+  if (blobs.some(b => !b)) throw new Error('Das Foto konnte nicht gelesen werden.');
+  const r = await AI.run('art', (blobs.length > 1 ? `Bestimme die Pflanze. Die ${blobs.length} Fotos zeigen dieselbe Pflanze aus verschiedenen Blickwinkeln, nutze alle zusammen. ` : 'Bestimme die Pflanze auf dem Foto. ') + 'Beachte: Zimmerpflanze, Gartenpflanze oder Wildpflanze in Mitteleuropa möglich.', blobs, 1200);
   const sc = { hoch: .85, mittel: .55, niedrig: .25 };
   return ((r.data && r.data.kandidaten) || []).slice(0, 3).filter(k => k && k.latein).map(k => ({
     src: 'claude', score: sc[k.sicherheit] || .25, label: 'Claude: Sicherheit ' + (k.sicherheit || 'niedrig'), why: k.begruendung || '', check: k.pruefen || '',
     species: { scientificNameWithoutAuthor: String(k.latein), commonNames: k.name_de ? [String(k.name_de)] : [], family: { scientificNameWithoutAuthor: '' } }
   }));
 }
-async function lookupAll(file) {
+async function lookupAll(files) {
   const s = state.settings;
   let mode = s.erkennung || 'beide';
   if (mode === 'beide' && !s.anthropicKey) mode = 'plantnet';
   if (mode === 'beide' && !s.plantnetKey) mode = 'claude';
   const jobs = [];
-  if (mode !== 'claude') jobs.push(plantnetLookup(file).then(r => r.map(x => ({ ...x, src: 'plantnet', label: 'Pl@ntNet: Sicherheit ' + Math.round(x.score * 100) + ' %' }))));
-  if (mode !== 'plantnet') jobs.push(claudeLookup(file));
+  if (mode !== 'claude') jobs.push(plantnetLookup(files).then(r => r.map(x => ({ ...x, src: 'plantnet', label: 'Pl@ntNet: Sicherheit ' + Math.round(x.score * 100) + ' %' }))));
+  if (mode !== 'plantnet') jobs.push(claudeLookup(files));
   const res = await Promise.allSettled(jobs);
   const raw = res.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
   const bad = res.filter(r => r.status === 'rejected').map(r => r.reason);
@@ -628,12 +633,12 @@ function lookupErrorHTML(e) {
 
 async function identify() {
   const out = $('#scanres'); if (!out || scanBusy) return;
-  if (!scanFile) { out.innerHTML = '<div class="warnbox">Bitte zuerst ein Foto aufnehmen oder aus der Galerie wählen.</div>'; return; }
+  if (!scanFiles.length) { out.innerHTML = '<div class="warnbox">Bitte zuerst ein Foto aufnehmen oder aus der Galerie wählen.</div>'; return; }
   scanBusy = true;
   out.innerHTML = '<p><span class="spin"></span> Erkenne …</p>';
   try {
-    const L = await lookupAll(scanFile); const results = L.items;
-    if (!results.length) { out.innerHTML = '<p class="muted">Keine sichere Erkennung. Anderes Foto versuchen (Blatt oder Blüte, gutes Licht).</p>'; return; }
+    const L = await lookupAll(scanFiles.slice()); const results = L.items;
+    if (!results.length) { out.innerHTML = '<p class="muted">Keine sichere Erkennung. Weiteres Foto hinzufügen (Blatt, Blüte, gutes Licht) oder neu beginnen.</p>'; return; }
     window.__scanResults = results;
     out.innerHTML = L.note.map(n => `<div class="warnbox">${esc(n)}</div>`).join('') + results.map((r, i) => {
       const sci = r.species.scientificNameWithoutAuthor, common = (r.species.commonNames || [])[0] || '';
@@ -1039,7 +1044,7 @@ document.addEventListener('click', async e => {
     const m = dbMatch(sci); const e2 = m ? m.entry : null; const approx = !!(m && !m.exact);
     const pre = { name: common, latin: sci, dbId: e2 ? e2.id : '', dbApprox: approx, waterDays: e2 ? e2.wasser_tage : 7, fertDays: e2 ? e2.duenger_tage : '',
       notes: approx ? `Pflegewerte geschätzt nach verwandter Art (${e2.name}).` : '' };
-    if (scanFile) { try { pre.photo = await putPhoto(await shrink(scanFile, 640, 0.8)); } catch {} }
+    if (scanFiles[0]) { try { pre.photo = await putPhoto(await shrink(scanFiles[0], 640, 0.8)); } catch {} }
     window.__prefill = pre; go('neu');
   }
 });
