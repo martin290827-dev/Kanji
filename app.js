@@ -3,7 +3,7 @@
 
 const KEY = 'pflanzen.v1';
 const PLANTNET = 'https://my-api.plantnet.org';
-const VERSION = 'Version 24.1 (31.10.2026)';
+const VERSION = 'Version 24.2 (31.10.2026)';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const titleEl = $('#title');
@@ -241,9 +241,9 @@ routes.tier = ([id]) => {
   h += `<div class="foot"><a href="#tier-bearbeiten/${a.id}">Bearbeiten</a><button class="link danger" data-adel="${a.id}">Löschen</button></div>`;
   render(a.name, h);
 };
-function animalForm(a) {
-  const isNew = !a.id; let saving = false, tFile = null, tResults = [], picked = null;
-  const scanCard = isNew ? `<div class="card"><div class="name">Per Foto erkennen (Claude)</div>
+function animalForm(a, pre = {}) {
+  const isNew = !a.id; let saving = false, tFile = pre.file || null, tResults = [], picked = pre.ebene ? { ebene: pre.ebene } : null;
+  const scanCard = isNew && !pre.file ? `<div class="card"><div class="name">Per Foto erkennen (Claude)</div>
     <div class="actions">
       <div class="pick"><span class="btn small">Foto aufnehmen</span><input id="tcam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
       <div class="pick"><span class="btn sec small">Aus Galerie</span><input id="tgal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
@@ -253,18 +253,20 @@ function animalForm(a) {
     <label>Wissenschaftlicher Name (optional)</label><input name="latin" value="${esc(a.latin || '')}" autocomplete="off" autocapitalize="off">
     <label>Gesehen am</label><input name="seen" type="date" required value="${esc(a.seen || today())}" max="${today()}">
     <label>Notizen</label><textarea name="notes">${esc(a.notes || '')}</textarea>
-    <label>${isNew ? 'Foto' : 'Neues Titelbild'}</label>${coverOf(a) ? `<img class="thumb" data-photo="${esc(coverOf(a))}" alt="" style="margin-bottom:6px">` : ''}
+    <label>${isNew ? 'Foto' : 'Neues Titelbild'}</label>${coverOf(a) ? `<img class="thumb" data-photo="${esc(coverOf(a))}" alt="" style="margin-bottom:6px">` : ''}<img id="tprev" class="thumb" alt="" style="display:none;margin-bottom:6px">
     <div class="pick"><span class="btn sec small" id="photolbl">Foto wählen</span><input name="photo" type="file" accept="image/*" aria-label="Foto wählen"></div>
     <div class="actions"><button type="submit">Speichern</button><a class="btn sec" href="#${isNew ? 'tiere' : 'tier/' + a.id}">Abbrechen</a></div>
   </form>`);
   const f = $('#f');
   f.elements.photo.addEventListener('change', ev => { $('#photolbl').textContent = ev.target.files[0] ? 'Foto gewählt' : 'Foto wählen'; });
+  const showPrev = () => { const pv = $('#tprev'); if (pv && tFile) { pv.src = URL.createObjectURL(tFile); pv.style.display = ''; } };
+  showPrev();
   if (isNew) {
     f.elements.name.addEventListener('input', () => { picked = null; });
     f.elements.latin.addEventListener('input', () => { picked = null; });
     const pickT = async e => {
       const file = e.target.files && e.target.files[0]; e.target.value = ''; if (!file || aiBusy) return;
-      tFile = file; picked = null; aiBusy = true; const out = $('#tres'); out.innerHTML = spinner;
+      tFile = file; picked = null; showPrev(); aiBusy = true; const out = $('#tres'); out.innerHTML = spinner;
       try {
         const L = await animalLookup(file); tResults = L.items;
         const hint = L.hinweis ? `<p class="hint">${esc(L.hinweis)}</p>` : '';
@@ -276,8 +278,9 @@ function animalForm(a) {
       } catch (err) { out.innerHTML = `<div class="warnbox">${aiErrorHTML(err)}</div>`; }
       finally { aiBusy = false; }
     };
-    $('#tcam').addEventListener('change', pickT); $('#tgal').addEventListener('change', pickT);
-    $('#tres').addEventListener('click', ev => {
+    const on = (sel, evt, fn) => { const el = $(sel); if (el) el.addEventListener(evt, fn); };
+    on('#tcam', 'change', pickT); on('#tgal', 'change', pickT);
+    on('#tres', 'click', ev => {
       const btn = ev.target.closest('button[data-tpick]'); if (!btn) return;
       const k = tResults[Number(btn.dataset.tpick)]; if (!k) return;
       const el = f.elements; el.name.value = AI.S(k.name_de) || AI.S(k.latein); el.latin.value = AI.S(k.latein);
@@ -331,7 +334,7 @@ async function runAnimalInfo(id) {
   } catch (e) { out.innerHTML = `<div class="warnbox">${aiErrorHTML(e)}</div>`; }
   finally { aiBusy = false; }
 }
-routes['tier-neu'] = () => animalForm({});
+routes['tier-neu'] = () => { const pre = window.__tprefill || {}; window.__tprefill = null; animalForm({ name: pre.name || '', latin: pre.latin || '' }, pre); };
 routes['tier-bearbeiten'] = ([id]) => { const a = state.animals.find(x => x.id === id); if (!a) return go('tiere'); animalForm(a); };
 
 /* ---------- Gesundheitsverlauf ---------- */
@@ -648,6 +651,7 @@ async function identify() {
 /* ---------- KI: Krankheit und Unkraut per Foto, Pflanzen-Infos ---------- */
 const modeTabs = mode => `<div class="seg">
   <a href="#scan" class="${mode === 'pflanze' ? 'on' : ''}">Pflanze</a>
+  <a href="#scan/tier" class="${mode === 'tier' ? 'on' : ''}">Tier</a>
   <a href="#scan/krank" class="${mode === 'krank' ? 'on' : ''}">Diagnose</a>
   <a href="#scan/unkraut" class="${mode === 'unkraut' ? 'on' : ''}">Unkraut</a></div>`;
 const spinner = '<p><span class="spin"></span> Claude wertet aus … (bis zu 30 Sekunden)</p>';
@@ -660,7 +664,48 @@ function aiErrorHTML(e) {
 const usageLine = u => u ? `<p class="hint">Verbrauch dieser Auswertung: ${u.inTok + u.outTok} Tokens, geschätzt ${(u.usd * 100).toFixed(2)} Cent.</p>` : '';
 
 let aiFiles = [], aiBusy = false, aiLast = null;
-routes.scan = ([mode, pid]) => (mode === 'krank' || mode === 'unkraut') ? aiScanView(mode, pid) : routes.scanPlant();
+routes.scan = ([mode, pid]) => (mode === 'krank' || mode === 'unkraut') ? aiScanView(mode, pid) : mode === 'tier' ? animalScanView() : routes.scanPlant();
+
+/* ---------- Scan: Tier (nur Claude, nichts wird automatisch gespeichert) ---------- */
+let tScanFile = null, tScanResults = [];
+function animalScanView() {
+  tScanFile = null; tScanResults = [];
+  const hasKey = !!state.settings.anthropicKey;
+  render('Scan', `${modeTabs('tier')}<div class="group pad">
+    ${hasKey ? '' : '<div class="warnbox">Noch kein Claude-Schlüssel hinterlegt. <a href="#einstellungen">Unter „Mehr → Einstellungen“ eintragen</a>.</div>'}
+    <p class="hint">Tiere erkennt nur Claude, Pl@ntNet kann nur Pflanzen. Etwa 1 Cent pro Foto.</p>
+    <img id="scanprev" class="big" style="display:none;margin:0 0 10px" alt="">
+    <div class="actions" style="margin-top:0">
+      <div class="pick grow"><span class="btn block">Foto aufnehmen</span><input id="scancam" type="file" accept="image/*" capture="environment" aria-label="Foto aufnehmen"></div>
+      <div class="pick grow"><span class="btn sec block">Aus Galerie</span><input id="scangal" type="file" accept="image/*" aria-label="Foto aus Galerie wählen"></div>
+    </div>
+    <div id="scanres"></div></div>`);
+  const pick = e => {
+    const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
+    if (aiBusy) return toast('Bitte kurz warten');
+    tScanFile = f; const prev = $('#scanprev'); prev.src = URL.createObjectURL(f); prev.style.display = 'block';
+    identifyAnimal();
+  };
+  $('#scancam').addEventListener('change', pick); $('#scangal').addEventListener('change', pick);
+}
+async function identifyAnimal() {
+  const out = $('#scanres'); if (!out || aiBusy || !tScanFile) return;
+  aiBusy = true; out.innerHTML = spinner;
+  try {
+    const L = await animalLookup(tScanFile); tScanResults = L.items;
+    const hint = L.hinweis ? `<p class="hint">${esc(L.hinweis)}</p>` : '';
+    out.innerHTML = (L.items.length
+      ? L.items.map((k, i) => {
+        const s = AI.S(k.sicherheit), eb = AI.S(k.ebene), gr = AI.S(k.gruppe);
+        return `<div class="card"><div class="name">${esc(AI.S(k.name_de) || AI.S(k.latein))}</div><div class="muted">${esc([AI.S(k.latein), eb].filter(Boolean).join(' · '))}</div>
+          <span class="badge ${/^hoch/i.test(s) ? 'ok' : 'due'}">Sicherheit: ${esc(s)}</span>${gr ? `<span class="badge">${esc(gr)}</span>` : ''}${eb && !/^art/i.test(eb) ? `<span class="badge">nur bis ${esc(eb)}</span>` : ''}
+          ${AI.S(k.begruendung) ? `<p class="hint">${esc(AI.S(k.begruendung))}${AI.S(k.pruefen) ? ' Prüfen: ' + esc(AI.S(k.pruefen)) : ''}</p>` : ''}
+          <div class="actions"><button class="small" data-tadd="${i}">Zur Sammlung</button></div></div>`;
+      }).join('') + '<p class="hint">KI-Vorschlag, nicht geprüft. Ähnliche Arten sind per Foto schwer zu unterscheiden.</p>'
+      : '<p class="muted">Keine sichere Erkennung. Anderes Foto versuchen: Tier groß, scharf und gut beleuchtet im Bild.</p>') + hint + usageLine(L.use);
+  } catch (e) { out.innerHTML = `<div class="warnbox">${aiErrorHTML(e)}</div>`; }
+  finally { aiBusy = false; }
+}
 
 function aiScanView(mode, pid) {
   aiFiles = []; aiLast = null;
@@ -791,6 +836,7 @@ routes.wunsch = () => {
 
 /* ---------- Mehr: Werkzeuge ---------- */
 const ICO = {
+  tier: ['#a0764a', '<circle cx="16" cy="21" r="2.600"/><circle cx="22" cy="14.500" r="2.600"/><circle cx="29" cy="14.500" r="2.600"/><circle cx="35" cy="21" r="2.600"/><path d="M25.500 24c-4.500 0-9 5-9 8.800 0 2.500 2.200 3.500 4.700 2.800 1.700-.5 2.700-1 4.300-1s2.600.5 4.300 1c2.500.7 4.700-.3 4.700-2.800 0-3.800-4.500-8.800-9-8.800z"/>'],
   erkennen: ['#2e9e6a', '<path d="M24 35V21M24 21c0-5 4-8 9-8 0 5-4 8-9 8zM24 27c0-4-3-6-8-6 0 4 3 6 8 6z"/>'],
   diagnose: ['#f0a030', '<path d="M24 16v16M16 24h16"/>'],
   unkraut: ['#5aae3c', '<path d="M24 35c0-6-1-12-6-17M24 35c0-8 1-14 8-19M24 35c-1-5-4-9-10-10"/>'],
@@ -802,8 +848,8 @@ const ico = k => `<svg viewBox="0 0 48 48" width="44" height="44" aria-hidden="t
 routes.mehr = () => {
   const tile = (href, k, label) => `<a class="tile" href="${href}">${ico(k)}<span>${label}</span></a>`;
   const big = (href, k, label, sub) => `<a class="tile big" href="${href}">${ico(k)}<b>${label}</b><span class="muted">${sub}</span></a>`;
-  render('Mehr', `<h2 class="sect">Werkzeuge zur Pflege</h2>
-    <div class="tiles">${tile('#scan', 'erkennen', 'Pflanze erkennen')}${tile('#scan/krank', 'diagnose', 'Diagnose')}${tile('#scan/unkraut', 'unkraut', 'Unkraut-Hilfe')}</div>
+  render('Mehr', `<h2 class="sect">Werkzeuge</h2>
+    <div class="tiles two">${tile('#scan', 'erkennen', 'Pflanze erkennen')}${tile('#scan/tier', 'tier', 'Tier erkennen')}${tile('#scan/krank', 'diagnose', 'Diagnose')}${tile('#scan/unkraut', 'unkraut', 'Unkraut-Hilfe')}</div>
     <h2 class="sect">Nachschlagen</h2>
     <div class="tiles two">${big('#giftig', 'giftig', 'Giftig-Check', 'Katze, Hund, Mensch')}${big('#wunsch', 'wunsch', 'Wunschliste', 'Pflanzen merken')}</div>
     <h2 class="sect">App</h2>
@@ -972,6 +1018,10 @@ document.addEventListener('click', async e => {
   }
   else if (D.wdel) { state.wishlist = state.wishlist.filter(w => w.id !== D.wdel); save(); route(); }
   else if (D.own) { const w = state.wishlist.find(x => x.id === D.own); state.wishlist = state.wishlist.filter(x => x !== w); save(); window.__prefill = { name: w.name }; go('neu'); }
+  else if (D.tadd !== undefined) {
+    const k = tScanResults[Number(D.tadd)]; if (!k) return;
+    window.__tprefill = { name: AI.S(k.name_de) || AI.S(k.latein), latin: AI.S(k.latein), ebene: AI.S(k.ebene), file: tScanFile }; go('tier-neu');
+  }
   else if (D.add != null || D.wish != null) {
     const r = window.__scanResults[Number(D.add ?? D.wish)]; const sci = r.species.scientificNameWithoutAuthor;
     const common = (r.species.commonNames || [])[0] || sci;
